@@ -16,6 +16,10 @@
       {
         "command": "comprehension-check.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "comprehension-check.storeGitDiff",
+        "title": "Store Git Diff"
       }
     ]
   },
