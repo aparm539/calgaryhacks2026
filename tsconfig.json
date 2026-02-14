@@ -4,7 +4,14 @@
 		"target": "ES2022",
 		"outDir": "out",
 		"lib": [
-			"ES2022"
+			"ES2022",
+			"DOM",
+			"DOM.Iterable"
+		],
+		"types": [
+			"node",
+			"vscode",
+			"mocha"
 		],
 		"sourceMap": true,
 		"rootDir": "src",

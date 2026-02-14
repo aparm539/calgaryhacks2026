@@ -16,6 +16,10 @@
       {
         "command": "comprehension-check.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "test.ollma",
+        "title": "test.ollma"
       }
     ]
   },
