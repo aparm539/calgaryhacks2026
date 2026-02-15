@@ -1,8 +1,7 @@
 "use client";
 
-// Chat panel — sends messages to the Watsonx API and displays text responses.
-// Extracts dsaupdate / flowjson blocks from the model output and forwards
-// them to the DSA Playground via the onPlaygroundUpdate callback.
+// Shared chat panel — routes each prompt to the needed visualizer APIs.
+// It extracts DSA updates and forwards arrays payloads to parent callbacks.
 
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +10,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Send, ChevronDown } from "lucide-react";
 import type { PlaygroundUpdate, StructureMode } from "@/lib/dsa-playground-types";
+import type {
+  ArraysChatErrorResponse,
+  ArraysChatSuccessResponse,
+} from "@/lib/arrays/types";
 
 // A single chat message (user or assistant)
 export type Message = {
@@ -21,10 +24,167 @@ export type Message = {
 
 type ChatUIProps = {
   onPlaygroundUpdate?: (update: PlaygroundUpdate) => void;
+  onArraysResult?: (payload: ArraysChatSuccessResponse) => void;
   messages?: Message[];
   onAddMessage?: (message: Message) => void;
   onClearMessages?: () => void;
 };
+
+type ChatHistoryItem = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type DSAChatSuccessResponse = {
+  content: string;
+};
+
+type DSAChatErrorResponse = {
+  error: string;
+};
+
+type ExplanationSuccessResponse = {
+  explanation: string;
+};
+
+type ExplanationErrorResponse = {
+  error: string;
+};
+
+type RouteDecisionSuccessResponse = {
+  callDSA: boolean;
+  callArrays: boolean;
+  reason?: string;
+  source?: "model" | "fallback";
+};
+
+type RouteDecisionErrorResponse = {
+  error: string;
+};
+
+function formatErrorMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") {
+    return fallback;
+  }
+
+  const error =
+    "error" in payload && typeof payload.error === "string"
+      ? payload.error
+      : null;
+  const details =
+    "details" in payload && typeof payload.details === "string"
+      ? payload.details
+      : null;
+
+  if (!error) {
+    return fallback;
+  }
+
+  if (details) {
+    return `${error} ${details}`;
+  }
+
+  return error;
+}
+
+function shouldRequestArraysResult(prompt: string) {
+  const lowerPrompt = prompt.toLowerCase();
+  const hasArrayLiteral = /\[[^\]]+\]/.test(prompt);
+  const hasKnownArraysAlgorithm =
+    lowerPrompt.includes("quicksort") ||
+    lowerPrompt.includes("quick sort") ||
+    lowerPrompt.includes("mergesort") ||
+    lowerPrompt.includes("merge sort") ||
+    lowerPrompt.includes("binary search") ||
+    lowerPrompt.includes("linear search");
+  const hasArraySearchOrSortIntent =
+    lowerPrompt.includes("array") &&
+    (lowerPrompt.includes("search") || lowerPrompt.includes("sort"));
+
+  return (
+    hasArrayLiteral || hasKnownArraysAlgorithm || hasArraySearchOrSortIntent
+  );
+}
+
+async function requestDSAChat(message: string, history: ChatHistoryItem[]) {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | DSAChatSuccessResponse
+    | DSAChatErrorResponse
+    | null;
+
+  if (!response.ok || !payload || "error" in payload) {
+    throw new Error(formatErrorMessage(payload, "DSA request failed."));
+  }
+
+  return payload;
+}
+
+async function requestArraysChat(message: string, history: ChatHistoryItem[]) {
+  const response = await fetch("/api/arrays/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | ArraysChatSuccessResponse
+    | ArraysChatErrorResponse
+    | null;
+
+  if (!response.ok || !payload || "error" in payload) {
+    throw new Error(formatErrorMessage(payload, "Arrays request failed."));
+  }
+
+  return payload;
+}
+
+async function requestExplanation(message: string, history: ChatHistoryItem[]) {
+  const response = await fetch("/api/chat/explanation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | ExplanationSuccessResponse
+    | ExplanationErrorResponse
+    | null;
+
+  if (!response.ok || !payload || "error" in payload) {
+    throw new Error(formatErrorMessage(payload, "Explanation request failed."));
+  }
+
+  return payload;
+}
+
+async function requestRouteDecision(
+  message: string,
+  dsaHistory: ChatHistoryItem[],
+  arraysHistory: ChatHistoryItem[]
+) {
+  const response = await fetch("/api/chat/route-decision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, dsaHistory, arraysHistory }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | RouteDecisionSuccessResponse
+    | RouteDecisionErrorResponse
+    | null;
+
+  if (!response.ok || !payload || "error" in payload) {
+    throw new Error(formatErrorMessage(payload, "Route decision request failed."));
+  }
+
+  return payload;
+}
 
 // Loose shape used when trying to infer a playground update from flowjson
 type FlowJsonLike = {
@@ -188,8 +348,9 @@ function inferPlaygroundUpdateFromFlow(content: string): PlaygroundUpdate | null
 }
 
 // Main chat component
-export function ChatUI({ 
+export function ChatUI({
   onPlaygroundUpdate,
+  onArraysResult,
   messages: externalMessages = [],
   onAddMessage,
   onClearMessages,
@@ -197,6 +358,9 @@ export function ChatUI({
   const [messages, setMessages] = useState<Message[]>(externalMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [explanationHistory, setExplanationHistory] = useState<ChatHistoryItem[]>([]);
+  const [dsaHistory, setDsaHistory] = useState<ChatHistoryItem[]>([]);
+  const [arraysHistory, setArraysHistory] = useState<ChatHistoryItem[]>([]);
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -222,7 +386,7 @@ export function ChatUI({
     });
   };
 
-  // Send the user message to /api/chat and process the response
+  // Send one prompt, route it, then run explanation + selected visualizer calls in parallel
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -238,41 +402,132 @@ export function ChatUI({
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: messages.map((item) => ({
-            role: item.role,
-            content: item.content,
-          })),
-        }),
-      });
+      let routeDecision: RouteDecisionSuccessResponse;
+      try {
+        routeDecision = await requestRouteDecision(text, dsaHistory, arraysHistory);
+      } catch {
+        const callArrays = shouldRequestArraysResult(text);
+        routeDecision = {
+          callDSA: !callArrays,
+          callArrays,
+          source: "fallback",
+          reason: "Client-side fallback routing.",
+        };
+      }
 
-      const data = (await response.json()) as
-        | { content: string }
-        | { error: string };
+      const nextExplanationHistory: ChatHistoryItem[] = [
+        ...explanationHistory,
+        { role: "user", content: text },
+      ];
+      const [explanationResult, dsaResult, arraysResult] = await Promise.allSettled([
+        requestExplanation(text, explanationHistory),
+        routeDecision.callDSA
+          ? requestDSAChat(text, dsaHistory)
+          : Promise.resolve<DSAChatSuccessResponse | null>(null),
+        routeDecision.callArrays
+          ? requestArraysChat(text, arraysHistory)
+          : Promise.resolve<ArraysChatSuccessResponse | null>(null),
+      ]);
 
-      if (!response.ok || "error" in data) {
-        throw new Error(
-          "error" in data ? data.error : "Request failed."
-        );
+      const nextDsaHistory: ChatHistoryItem[] = routeDecision.callDSA
+        ? [...dsaHistory, { role: "user", content: text }]
+        : dsaHistory;
+      const nextArraysHistory: ChatHistoryItem[] = routeDecision.callArrays
+        ? [...arraysHistory, { role: "user", content: text }]
+        : arraysHistory;
+
+      let explanationText: string | null = null;
+      let dsaError: string | null = null;
+      let arraysError: string | null = null;
+      let explanationError: string | null = null;
+
+      if (explanationResult.status === "fulfilled" && explanationResult.value) {
+        const explanation = explanationResult.value.explanation.trim();
+        if (explanation) {
+          explanationText = explanation;
+          setExplanationHistory([
+            ...nextExplanationHistory,
+            { role: "assistant", content: explanationText },
+          ]);
+        } else {
+          explanationError = "Explanation response was empty.";
+          setExplanationHistory(nextExplanationHistory);
+        }
+      } else {
+        explanationError =
+          explanationResult.status === "rejected" &&
+          explanationResult.reason instanceof Error
+            ? explanationResult.reason.message
+            : "Unable to generate explanation.";
+        setExplanationHistory(nextExplanationHistory);
+      }
+
+      if (
+        routeDecision.callDSA &&
+        dsaResult.status === "fulfilled" &&
+        dsaResult.value
+      ) {
+        const assistantContent = dsaResult.value.content;
+        const update =
+          extractPlaygroundUpdate(assistantContent) ||
+          inferPlaygroundUpdateFromFlow(assistantContent);
+        if (update) {
+          onPlaygroundUpdate?.(update);
+        }
+
+        setDsaHistory([
+          ...nextDsaHistory,
+          { role: "assistant", content: assistantContent },
+        ]);
+      } else if (routeDecision.callDSA && dsaResult.status === "rejected") {
+        dsaError =
+          dsaResult.reason instanceof Error
+            ? dsaResult.reason.message
+            : "Unable to reach DSA API.";
+        setDsaHistory(nextDsaHistory);
+      }
+
+      if (
+        routeDecision.callArrays &&
+        arraysResult.status === "fulfilled" &&
+        arraysResult.value
+      ) {
+        const arraysPayload = arraysResult.value;
+        onArraysResult?.(arraysPayload);
+        const arraysStatusText = `Arrays visualization updated for ${arraysPayload.normalizedInput.algorithm}.`;
+        setArraysHistory([
+          ...nextArraysHistory,
+          { role: "assistant", content: arraysStatusText },
+        ]);
+      } else if (routeDecision.callArrays && arraysResult.status === "rejected") {
+        arraysError =
+          arraysResult.reason instanceof Error
+            ? arraysResult.reason.message
+            : "Unable to reach arrays API.";
+        setArraysHistory(nextArraysHistory);
+      } else if (routeDecision.callArrays) {
+        setArraysHistory(nextArraysHistory);
+      }
+
+      const sections: string[] = [];
+      if (explanationText) sections.push(explanationText);
+      if (explanationError) sections.push(`Explanation error: ${explanationError}`);
+      if (dsaError) {
+        sections.push(`DSA error: ${dsaError}`);
+      }
+      if (routeDecision.callArrays && arraysError) {
+        sections.push(`Arrays error: ${arraysError}`);
+      }
+      if (sections.length === 0) {
+        sections.push("No response generated.");
       }
 
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
         role: "assistant",
-        content: data.content,
+        content: sections.join("\n\n"),
       };
-
-      // Try to extract a playground update (dsaupdate first, flowjson fallback)
-      const update =
-        extractPlaygroundUpdate(data.content) ||
-        inferPlaygroundUpdateFromFlow(data.content);
-      if (update) {
-        onPlaygroundUpdate?.(update);
-      }
+      setMessages((prev) => [...prev, assistantMessage]);
       onAddMessage?.(assistantMessage);
     } catch (error) {
       const assistantMessage: Message = {
@@ -290,12 +545,12 @@ export function ChatUI({
   }
 
   return (
-    <div className="flex h-full w-full flex-col rounded-xl border bg-card shadow-sm">
-      <div className="border-b px-4 py-3 flex items-center justify-between shrink-0">
+    <div className="flex min-h-[300px] max-h-[70vh] w-full flex-col rounded-xl border bg-card shadow-sm overflow-hidden">
+      <div className="border-b px-4 py-3 flex items-center justify-between flex-shrink-0">
         <div>
           <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
           <p className="text-xs text-muted-foreground">
-            Prompt a data structure or algorithm to get a diagram.
+            One chat routes to the DSA playground or arrays visualizer.
           </p>
         </div>
         <Button
@@ -311,7 +566,7 @@ export function ChatUI({
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 overflow-hidden">
+      <ScrollArea className="flex-1 min-h-0 overflow-hidden">
         <div className="flex flex-col gap-4 p-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
@@ -380,7 +635,7 @@ export function ChatUI({
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Try: Visualize binary search on [1,3,5,7,9]"
+          placeholder="Try: Run quicksort, binary search for 7, or build a BST with 8,3,10"
           className="min-w-0 flex-1"
           disabled={isLoading}
         />
