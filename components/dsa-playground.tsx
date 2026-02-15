@@ -278,10 +278,12 @@ const modeLabels: Record<StructureMode, string> = {
 
 type DSAPlaygroundProps = {
   externalUpdate?: PlaygroundUpdate | null; // injected from the chat panel
+  thinkingMode?: boolean;
+  onThinkingModeChange?: (mode: boolean) => void;
 };
 
 // Main playground component
-export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
+export function DSAPlayground({ externalUpdate, thinkingMode = false, onThinkingModeChange }: DSAPlaygroundProps) {
   // Use the model-provided mode/values if available, otherwise defaults
   const initialMode = externalUpdate?.mode ?? "bst";
   const initialValues = externalUpdate?.values
@@ -549,6 +551,12 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
     return () => clearInterval(timer);
   }, [isPlaying, activeFrames]);
 
+  // Refresh diagram and reset when thinking mode changes
+  useEffect(() => {
+    setFrameIndex(0);
+    setIsPlaying(false);
+  }, [thinkingMode]);
+
   return (
     <div className="flex h-full w-full flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm">
       <div>
@@ -579,6 +587,14 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
             {modeLabels[item]}
           </Button>
         ))}
+        <Button
+          type="button"
+          variant={thinkingMode ? "default" : "outline"}
+          onClick={() => onThinkingModeChange?.(!thinkingMode)}
+          className="ml-auto"
+        >
+           Learning Mode
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

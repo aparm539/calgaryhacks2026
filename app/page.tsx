@@ -9,6 +9,7 @@ export default function Home() {
   const [playgroundUpdate, setPlaygroundUpdate] =
     useState<PlaygroundUpdate | null>(null);
   const [playgroundVersion, setPlaygroundVersion] = useState(0);
+  const [thinkingMode, setThinkingMode] = useState(false);
 
   const handlePlaygroundUpdate = (update: PlaygroundUpdate) => {
     setPlaygroundUpdate(update);
@@ -21,10 +22,16 @@ export default function Home() {
         <DSAPlayground
           key={`playground-${playgroundVersion}`}
           externalUpdate={playgroundUpdate}
+          thinkingMode={thinkingMode}
+          onThinkingModeChange={setThinkingMode}
         />
       </div>
       <div className="flex-1">
-        <ChatUI onPlaygroundUpdate={handlePlaygroundUpdate} />
+        <ChatUI 
+          onPlaygroundUpdate={handlePlaygroundUpdate}
+          thinkingMode={thinkingMode}
+          onThinkingModeChange={setThinkingMode}
+        />
       </div>
     </div>
   );

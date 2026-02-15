@@ -21,6 +21,8 @@ export type Message = {
 
 type ChatUIProps = {
   onPlaygroundUpdate?: (update: PlaygroundUpdate) => void;
+  thinkingMode?: boolean;
+  onThinkingModeChange?: (mode: boolean) => void;
 };
 
 // Loose shape used when trying to infer a playground update from flowjson
@@ -185,7 +187,7 @@ function inferPlaygroundUpdateFromFlow(content: string): PlaygroundUpdate | null
 }
 
 // Main chat component
-export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
+export function ChatUI({ onPlaygroundUpdate, thinkingMode = false, onThinkingModeChange }: ChatUIProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -225,11 +227,19 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
     setIsLoading(true);
 
     try {
+      // When thinking mode is on, always ask questions regardless of user input
+      let finalMessage = text;
+      
+      if (thinkingMode) {
+        // In thinking mode, always generate questions based on user input
+        finalMessage = `[THINKING MODE] Ask 1-2 key multiple choice questions based on this topic/problem to help the user think deeper. Each question should have 3-4 answer options (A, B, C, D). Format clearly with 🤔 emoji. Then, after the questions, include a code block with dsaupdate to generate a diagram. Format:\n\n **Key Questions:**\n\n**Question 1:** [Question text]\nA) [Option A]\nB) [Option B]\nC) [Option C]\nD) [Option D]\n\n**Question 2:** [Question text]\nA) [Option A]\nB) [Option B]\nC) [Option C]\nD) [Option D]\n\nThen provide the dsaupdate code block for visualization.\n\nTopic/Context: ${text}`;
+      }
+
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: text,
+          message: finalMessage,
           history: messages.map((item) => ({
             role: item.role,
             content: item.content,
