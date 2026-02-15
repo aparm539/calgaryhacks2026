@@ -6,6 +6,12 @@ import {
 
 const ALGORITHM_HELP =
   "Supported algorithms: linear search, binary search, quicksort, mergesort.";
+const DEFAULT_ARRAY_BY_ALGORITHM: Record<ArraysAlgorithm, number[]> = {
+  "linear-search": [4, 2, 9, 1, 7],
+  "binary-search": [1, 3, 5, 7, 9, 11],
+  quicksort: [9, 3, 7, 1, 5],
+  mergesort: [8, 4, 6, 2, 7, 3],
+};
 
 export class ArraysParserError extends Error {
   constructor(message: string) {
@@ -49,13 +55,11 @@ function extractArraySegment(message: string) {
   return match?.[0] ?? null;
 }
 
-function parseArray(message: string) {
+function parseArray(message: string, algorithm: ArraysAlgorithm) {
   const rawArray = extractArraySegment(message);
 
   if (!rawArray) {
-    throw new ArraysParserError(
-      "Please include explicit array values, e.g. [4, 2, 9, 1]."
-    );
+    return [...DEFAULT_ARRAY_BY_ALGORITHM[algorithm]];
   }
 
   const values = rawArray
@@ -121,7 +125,7 @@ export function normalizeArraysPrompt(message: string): NormalizedArraysInput {
     );
   }
 
-  const array = parseArray(trimmed);
+  const array = parseArray(trimmed, algorithm);
 
   if (algorithm === "binary-search" && !isSortedAscending(array)) {
     throw new ArraysParserError(

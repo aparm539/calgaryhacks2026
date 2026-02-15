@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { DSA_DIAGRAM_SYSTEM_PROMPT } from "@/lib/dsa/chat-prompts";
 
 type ClientMessage = {
   role: "user" | "assistant";
@@ -9,16 +10,6 @@ type ChatRequest = {
   message: string;
   history?: ClientMessage[];
 };
-
-const SYSTEM_PROMPT = `You are a data structures and algorithms tutor and visualizer.
-
-When the user asks about a data structure or algorithm, respond with:
-1. A short explanation of what you did and why (2-3 sentences).
-2. A conceptual follow-up question to test the user's understanding (e.g. "What would happen if we inserted 5 next?" or "What is the time complexity of this operation?").
-3. Exactly one code block tagged dsaupdate with valid JSON: {"mode":"bst|linked-list|queue|stack","values":[numbers],"explanation":"short summary of the change"}.
-
-Do NOT include flowjson or mermaid blocks. The visualization is handled automatically from dsaupdate.
-Keep your visible text educational, concise, and conversational. Always include at least one value in dsaupdate.values.`;
 
 const IAM_URL = "https://iam.cloud.ibm.com/identity/token";
 const CHAT_URL =
@@ -117,7 +108,7 @@ export async function POST(request: Request) {
 
     const payload = {
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: DSA_DIAGRAM_SYSTEM_PROMPT },
         ...history,
         { role: "user", content: message },
       ],

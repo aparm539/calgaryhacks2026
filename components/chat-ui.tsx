@@ -40,6 +40,14 @@ type DSAChatErrorResponse = {
   error: string;
 };
 
+type ExplanationSuccessResponse = {
+  explanation: string;
+};
+
+type ExplanationErrorResponse = {
+  error: string;
+};
+
 type RouteDecisionSuccessResponse = {
   callDSA: boolean;
   callArrays: boolean;
@@ -77,18 +85,21 @@ function formatErrorMessage(payload: unknown, fallback: string) {
 }
 
 function shouldRequestArraysResult(prompt: string) {
-  const hasArrayLiteral = /\[[^\]]+\]/.test(prompt);
-  if (!hasArrayLiteral) {
-    return false;
-  }
-
   const lowerPrompt = prompt.toLowerCase();
+  const hasArrayLiteral = /\[[^\]]+\]/.test(prompt);
+  const hasKnownArraysAlgorithm =
+    lowerPrompt.includes("quicksort") ||
+    lowerPrompt.includes("quick sort") ||
+    lowerPrompt.includes("mergesort") ||
+    lowerPrompt.includes("merge sort") ||
+    lowerPrompt.includes("binary search") ||
+    lowerPrompt.includes("linear search");
+  const hasArraySearchOrSortIntent =
+    lowerPrompt.includes("array") &&
+    (lowerPrompt.includes("search") || lowerPrompt.includes("sort"));
+
   return (
-    lowerPrompt.includes("array") ||
-    lowerPrompt.includes("search") ||
-    lowerPrompt.includes("sort") ||
-    lowerPrompt.includes("quick") ||
-    lowerPrompt.includes("merge")
+    hasArrayLiteral || hasKnownArraysAlgorithm || hasArraySearchOrSortIntent
   );
 }
 
@@ -125,6 +136,25 @@ async function requestArraysChat(message: string, history: ChatHistoryItem[]) {
 
   if (!response.ok || !payload || "error" in payload) {
     throw new Error(formatErrorMessage(payload, "Arrays request failed."));
+  }
+
+  return payload;
+}
+
+async function requestExplanation(message: string, history: ChatHistoryItem[]) {
+  const response = await fetch("/api/chat/explanation", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | ExplanationSuccessResponse
+    | ExplanationErrorResponse
+    | null;
+
+  if (!response.ok || !payload || "error" in payload) {
+    throw new Error(formatErrorMessage(payload, "Explanation request failed."));
   }
 
   return payload;
@@ -319,6 +349,7 @@ export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [explanationHistory, setExplanationHistory] = useState<ChatHistoryItem[]>([]);
   const [dsaHistory, setDsaHistory] = useState<ChatHistoryItem[]>([]);
   const [arraysHistory, setArraysHistory] = useState<ChatHistoryItem[]>([]);
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
@@ -341,7 +372,7 @@ export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
     });
   };
 
-  // Send one prompt, route it with the router API, then call selected visualizers
+  // Send one prompt, route it, then run explanation + selected visualizer calls in parallel
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -361,15 +392,21 @@ export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
       try {
         routeDecision = await requestRouteDecision(text, dsaHistory, arraysHistory);
       } catch {
+        const callArrays = shouldRequestArraysResult(text);
         routeDecision = {
-          callDSA: true,
-          callArrays: shouldRequestArraysResult(text),
+          callDSA: !callArrays,
+          callArrays,
           source: "fallback",
           reason: "Client-side fallback routing.",
         };
       }
 
-      const [dsaResult, arraysResult] = await Promise.allSettled([
+      const nextExplanationHistory: ChatHistoryItem[] = [
+        ...explanationHistory,
+        { role: "user", content: text },
+      ];
+      const [explanationResult, dsaResult, arraysResult] = await Promise.allSettled([
+        requestExplanation(text, explanationHistory),
         routeDecision.callDSA
           ? requestDSAChat(text, dsaHistory)
           : Promise.resolve<DSAChatSuccessResponse | null>(null),
@@ -385,10 +422,31 @@ export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
         ? [...arraysHistory, { role: "user", content: text }]
         : arraysHistory;
 
-      let dsaText: string | null = null;
-      let arraysText: string | null = null;
+      let explanationText: string | null = null;
       let dsaError: string | null = null;
       let arraysError: string | null = null;
+      let explanationError: string | null = null;
+
+      if (explanationResult.status === "fulfilled" && explanationResult.value) {
+        const explanation = explanationResult.value.explanation.trim();
+        if (explanation) {
+          explanationText = explanation;
+          setExplanationHistory([
+            ...nextExplanationHistory,
+            { role: "assistant", content: explanationText },
+          ]);
+        } else {
+          explanationError = "Explanation response was empty.";
+          setExplanationHistory(nextExplanationHistory);
+        }
+      } else {
+        explanationError =
+          explanationResult.status === "rejected" &&
+          explanationResult.reason instanceof Error
+            ? explanationResult.reason.message
+            : "Unable to generate explanation.";
+        setExplanationHistory(nextExplanationHistory);
+      }
 
       if (
         routeDecision.callDSA &&
@@ -402,8 +460,6 @@ export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
         if (update) {
           onPlaygroundUpdate?.(update);
         }
-
-        dsaText = stripCodeBlocks(assistantContent) || "DSA playground updated.";
 
         setDsaHistory([
           ...nextDsaHistory,
@@ -425,7 +481,6 @@ export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
         const arraysPayload = arraysResult.value;
         onArraysResult?.(arraysPayload);
         const arraysStatusText = `Arrays visualization updated for ${arraysPayload.normalizedInput.algorithm}.`;
-        arraysText = arraysStatusText;
         setArraysHistory([
           ...nextArraysHistory,
           { role: "assistant", content: arraysStatusText },
@@ -441,13 +496,8 @@ export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
       }
 
       const sections: string[] = [];
-      if (dsaText && arraysText) {
-        sections.push(`DSA Playground\n${dsaText}`);
-        sections.push(`Arrays Visualizer\n${arraysText}`);
-      } else {
-        if (dsaText) sections.push(dsaText);
-        if (arraysText) sections.push(arraysText);
-      }
+      if (explanationText) sections.push(explanationText);
+      if (explanationError) sections.push(`Explanation error: ${explanationError}`);
       if (dsaError) {
         sections.push(`DSA error: ${dsaError}`);
       }
@@ -482,15 +532,15 @@ export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
   }
 
   return (
-    <div className="flex h-[360px] min-h-[300px] w-full flex-col rounded-xl border bg-card shadow-sm">
+    <div className="flex min-h-[300px] max-h-[70vh] w-full flex-col rounded-xl border bg-card shadow-sm overflow-hidden">
       <div className="border-b px-4 py-3 flex-shrink-0">
         <h2 className="font-semibold text-foreground">Visualizer Chat</h2>
         <p className="text-xs text-muted-foreground">
-          One chat updates both the DSA playground and arrays visualizer.
+          One chat routes to either the DSA playground or arrays visualizer.
         </p>
       </div>
 
-      <ScrollArea className="flex-1 overflow-hidden">
+      <ScrollArea className="flex-1 min-h-0 overflow-hidden">
         <div className="flex flex-col gap-4 p-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
@@ -559,7 +609,7 @@ export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Try: Run quicksort on [9, 3, 7, 1, 5] or build a BST with 8,3,10"
+          placeholder="Try: Run quicksort, binary search for 7, or build a BST with 8,3,10"
           className="min-w-0 flex-1"
           disabled={isLoading}
         />

@@ -23,17 +23,35 @@ type RouteDecision = {
   source: "model";
 };
 
-const ROUTER_SYSTEM_PROMPT = `You route user prompts to one or both visualization engines.
+const ROUTER_SYSTEM_PROMPT = `You route user prompts to exactly one visualization engine.
 Return strict JSON only:
 {"callDSA":true|false,"callArrays":true|false,"reason":"short optional reason"}
 
 Routing rules:
 - callDSA=true for DSA playground intent (bst, linked list, queue, stack, tree operations, general non-array DSA operations).
 - callArrays=true for arrays visualizer intent (array search/sort walkthroughs, explicit array literals, quicksort/mergesort/binary-search/linear-search).
-- If user asks for both, set both true.
+- If user mentions both categories, choose the primary requested action and set only one target true.
 - If unsure, set callDSA=true.
-- At least one of callDSA/callArrays must be true.
+- Exactly one of callDSA/callArrays must be true.
 - No markdown, no prose, no code fences.`;
+
+function shouldRouteArrays(message: string) {
+  const lowerMessage = message.toLowerCase();
+  const hasArrayLiteral = /\[[^\]]+\]/.test(message);
+
+  return (
+    hasArrayLiteral ||
+    lowerMessage.includes("array") ||
+    lowerMessage.includes("sort") ||
+    lowerMessage.includes("search") ||
+    lowerMessage.includes("quicksort") ||
+    lowerMessage.includes("quick sort") ||
+    lowerMessage.includes("mergesort") ||
+    lowerMessage.includes("merge sort") ||
+    lowerMessage.includes("binary search") ||
+    lowerMessage.includes("linear search")
+  );
+}
 
 function stripMarkdownFences(raw: string) {
   const trimmed = raw.trim();
@@ -75,7 +93,7 @@ function formatHistory(name: string, history: ClientMessage[]) {
   return `${name}:\n${lines}`;
 }
 
-function parseRouteDecision(raw: string): Omit<RouteDecision, "source"> {
+function parseRouteDecision(raw: string, message: string): Omit<RouteDecision, "source"> {
   const text = stripMarkdownFences(raw);
   const parsed = JSON.parse(text) as {
     callDSA?: unknown;
@@ -87,12 +105,16 @@ function parseRouteDecision(raw: string): Omit<RouteDecision, "source"> {
   const callArrays =
     typeof parsed.callArrays === "boolean" ? parsed.callArrays : false;
 
-  if (!callDSA && !callArrays) {
+  if (callDSA === callArrays) {
+    const shouldUseArrays = shouldRouteArrays(message);
+
     return {
-      callDSA: true,
-      callArrays: false,
+      callDSA: !shouldUseArrays,
+      callArrays: shouldUseArrays,
       reason:
-        "Router returned no target. Forced DSA to ensure at least one responder.",
+        typeof parsed.reason === "string" && parsed.reason.trim().length > 0
+          ? `${parsed.reason} Normalized to a single route target.`
+          : "Router returned an invalid multi-target result. Normalized to one route target.",
     };
   }
 
@@ -152,7 +174,7 @@ Return JSON only.`;
       maxTokens: 180,
     });
 
-    const parsedDecision = parseRouteDecision(rawDecision);
+    const parsedDecision = parseRouteDecision(rawDecision, message);
     return NextResponse.json({
       ...parsedDecision,
       source: "model",
