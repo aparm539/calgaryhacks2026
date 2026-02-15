@@ -232,7 +232,7 @@ export function ChatUI({ onPlaygroundUpdate, thinkingMode = false, onThinkingMod
       
       if (thinkingMode) {
         // In thinking mode, always generate questions based on user input
-        finalMessage = `[THINKING MODE] Ask 1-2 key multiple choice questions based on this topic/problem to help the user think deeper. Each question should have 3-4 answer options (A, B, C, D). Format clearly with 🤔 emoji. Then, after the questions, include a code block with dsaupdate to generate a diagram. Format:\n\n **Key Questions:**\n\n**Question 1:** [Question text]\nA) [Option A]\nB) [Option B]\nC) [Option C]\nD) [Option D]\n\n**Question 2:** [Question text]\nA) [Option A]\nB) [Option B]\nC) [Option C]\nD) [Option D]\n\nThen provide the dsaupdate code block for visualization.\n\nTopic/Context: ${text}`;
+        finalMessage = `[THINKING MODE] Ask 1-2 key multiple choice questions based on this topic/problem to help the user think deeper. Each question should have 3-4 answer options (A, B, C, D). Then, after the questions, include a code block with dsaupdate to generate a diagram. Format:\n\n **Key Questions:**\n\n**Question 1:** [Question text]\nA) [Option A]\nB) [Option B]\nC) [Option C]\nD) [Option D]\n\n**Question 2:** [Question text]\nA) [Option A]\nB) [Option B]\nC) [Option C]\nD) [Option D]\n\nThen provide the dsaupdate code block for visualization.\n\nTopic/Context: ${text}`;
       }
 
       const response = await fetch("/api/chat", {
