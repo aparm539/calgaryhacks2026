@@ -21,8 +21,9 @@ export type Message = {
 
 type ChatUIProps = {
   onPlaygroundUpdate?: (update: PlaygroundUpdate) => void;
-  thinkingMode?: boolean;
-  onThinkingModeChange?: (mode: boolean) => void;
+  messages?: Message[];
+  onAddMessage?: (message: Message) => void;
+  onClearMessages?: () => void;
 };
 
 // Loose shape used when trying to infer a playground update from flowjson
@@ -187,12 +188,22 @@ function inferPlaygroundUpdateFromFlow(content: string): PlaygroundUpdate | null
 }
 
 // Main chat component
-export function ChatUI({ onPlaygroundUpdate, thinkingMode = false, onThinkingModeChange }: ChatUIProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
+export function ChatUI({ 
+  onPlaygroundUpdate,
+  messages: externalMessages = [],
+  onAddMessage,
+  onClearMessages,
+}: ChatUIProps) {
+  const [messages, setMessages] = useState<Message[]>(externalMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 同步外部messages
+  useEffect(() => {
+    setMessages(externalMessages);
+  }, [externalMessages]);
 
   // Auto-scroll to bottom when a new message arrives
   useEffect(() => {
@@ -222,24 +233,16 @@ export function ChatUI({ onPlaygroundUpdate, thinkingMode = false, onThinkingMod
       role: "user",
       content: text,
     };
-    setMessages((prev) => [...prev, userMessage]);
+    onAddMessage?.(userMessage);
     setInput("");
     setIsLoading(true);
 
     try {
-      // When thinking mode is on, always ask questions regardless of user input
-      let finalMessage = text;
-      
-      if (thinkingMode) {
-        // In thinking mode, always generate questions based on user input
-        finalMessage = `[THINKING MODE] Ask 1-2 key multiple choice questions based on this topic/problem to help the user think deeper. Each question should have 3-4 answer options (A, B, C, D). Then, after the questions, include a code block with dsaupdate to generate a diagram. Format:\n\n **Key Questions:**\n\n**Question 1:** [Question text]\nA) [Option A]\nB) [Option B]\nC) [Option C]\nD) [Option D]\n\n**Question 2:** [Question text]\nA) [Option A]\nB) [Option B]\nC) [Option C]\nD) [Option D]\n\nThen provide the dsaupdate code block for visualization.\n\nTopic/Context: ${text}`;
-      }
-
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message: finalMessage,
+          message: text,
           history: messages.map((item) => ({
             role: item.role,
             content: item.content,
@@ -270,7 +273,7 @@ export function ChatUI({ onPlaygroundUpdate, thinkingMode = false, onThinkingMod
       if (update) {
         onPlaygroundUpdate?.(update);
       }
-      setMessages((prev) => [...prev, assistantMessage]);
+      onAddMessage?.(assistantMessage);
     } catch (error) {
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -280,7 +283,7 @@ export function ChatUI({ onPlaygroundUpdate, thinkingMode = false, onThinkingMod
             ? `Error: ${error.message}`
             : "Error: Unable to reach the server.",
       };
-      setMessages((prev) => [...prev, assistantMessage]);
+      onAddMessage?.(assistantMessage);
     } finally {
       setIsLoading(false);
     }
@@ -288,11 +291,24 @@ export function ChatUI({ onPlaygroundUpdate, thinkingMode = false, onThinkingMod
 
   return (
     <div className="flex h-full w-full flex-col rounded-xl border bg-card shadow-sm">
-      <div className="border-b px-4 py-3 flex-shrink-0">
-        <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
-        <p className="text-xs text-muted-foreground">
-          Prompt a data structure or algorithm to get a diagram.
-        </p>
+      <div className="border-b px-4 py-3 flex items-center justify-between shrink-0">
+        <div>
+          <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
+          <p className="text-xs text-muted-foreground">
+            Prompt a data structure or algorithm to get a diagram.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            onClearMessages?.();
+            setMessages([]);
+          }}
+        >
+          Reset
+        </Button>
       </div>
 
       <ScrollArea className="flex-1 overflow-hidden">
@@ -324,7 +340,7 @@ export function ChatUI({ onPlaygroundUpdate, thinkingMode = false, onThinkingMod
                   <div className="flex items-start gap-2">
                     <button
                       onClick={() => toggleMessageCollapse(msg.id)}
-                      className="mt-0.5 flex-shrink-0 focus:outline-none"
+                      className="mt-0.5 shrink-0 focus:outline-none"
                       aria-label={isCollapsed ? "Expand message" : "Collapse message"}
                     >
                       <ChevronDown
@@ -359,7 +375,7 @@ export function ChatUI({ onPlaygroundUpdate, thinkingMode = false, onThinkingMod
 
       <form
         onSubmit={handleSubmit}
-        className="flex gap-2 border-t p-4 flex-shrink-0"
+        className="flex gap-2 border-t p-4 shrink-0"
       >
         <Input
           value={input}
