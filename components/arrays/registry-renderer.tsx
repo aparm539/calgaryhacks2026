@@ -5,13 +5,16 @@ import { BarArrayView } from "@/components/arrays/bar-array-view";
 import { CaptionCallout } from "@/components/arrays/caption-callout";
 import { CodeBlock } from "@/components/arrays/code-block";
 import { CompareAnimation } from "@/components/arrays/compare-animation";
-import { PartitionView } from "@/components/arrays/partition-view";
+import {
+  PartitionView,
+  type PartitionHistoryEntry,
+} from "@/components/arrays/partition-view";
 import { PointerLayer } from "@/components/arrays/pointer-layer";
 import { RangeHighlight } from "@/components/arrays/range-highlight";
 import { StackView } from "@/components/arrays/stack-view";
 import { SwapAnimation } from "@/components/arrays/swap-animation";
 import { TimelineStepper } from "@/components/arrays/timeline-stepper";
-import { MergeView } from "@/components/arrays/merge-view";
+import { MergeView, type MergeHistoryEntry } from "@/components/arrays/merge-view";
 import type {
   ArraysVizSpec,
   RegistryComponentRef,
@@ -96,6 +99,40 @@ export function RegistryRenderer({
   const arrayLength = step.state.array.length;
   const orderedComponents = sortComponentsByRenderOrder(
     dedupeComponentsByType(components)
+  );
+  const stepsToCurrent = spec.steps.slice(0, stepIndex + 1);
+  const partitionHistory = stepsToCurrent.reduce<PartitionHistoryEntry[]>(
+    (history, timelineStep, timelineIndex) => {
+      if (!timelineStep.state.partition) {
+        return history;
+      }
+
+      history.push({
+        stepIndex: timelineIndex,
+        caption: timelineStep.caption,
+        partition: timelineStep.state.partition,
+        isCurrent: timelineIndex === stepIndex,
+      });
+      return history;
+    },
+    []
+  );
+  const mergeHistory = stepsToCurrent.reduce<MergeHistoryEntry[]>(
+    (history, timelineStep, timelineIndex) => {
+      if (!timelineStep.state.merge) {
+        return history;
+      }
+
+      history.push({
+        stepIndex: timelineIndex,
+        caption: timelineStep.caption,
+        merge: timelineStep.state.merge,
+        stepId: timelineStep.id,
+        isCurrent: timelineIndex === stepIndex,
+      });
+      return history;
+    },
+    []
   );
 
   return (
@@ -185,7 +222,13 @@ export function RegistryRenderer({
         }
 
         if (component.type === "PartitionView") {
-          return <PartitionView key={component.id} partition={step.state.partition} />;
+          return (
+            <PartitionView
+              key={component.id}
+              partition={step.state.partition}
+              history={partitionHistory}
+            />
+          );
         }
 
         if (component.type === "MergeView") {
@@ -194,6 +237,7 @@ export function RegistryRenderer({
               key={component.id}
               merge={step.state.merge}
               animationKey={step.id}
+              history={mergeHistory}
             />
           );
         }
