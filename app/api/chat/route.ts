@@ -24,7 +24,18 @@ const IAM_URL = "https://iam.cloud.ibm.com/identity/token";
 const CHAT_URL =
   "https://ca-tor.ml.cloud.ibm.com/ml/v1/text/chat?version=2023-05-29";
 
-async function getAccessToken(apiKey: string) {
+// Cache IAM token to avoid an extra round-trip on every chat request (tokens last ~1 hour).
+const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000; // refresh 5 min before expiry
+
+let cachedToken: string | null = null;
+let tokenExpiresAt = 0;
+
+async function getAccessToken(apiKey: string): Promise<string> {
+  const now = Date.now();
+  if (cachedToken && now < tokenExpiresAt - TOKEN_REFRESH_BUFFER_MS) {
+    return cachedToken;
+  }
+
   const form = new URLSearchParams();
   form.set("grant_type", "urn:ibm:params:oauth:grant-type:apikey");
   form.set("apikey", apiKey);
@@ -43,11 +54,16 @@ async function getAccessToken(apiKey: string) {
     throw new Error(`IAM token error: ${response.status} ${errorText}`);
   }
 
-  const data = (await response.json()) as { access_token?: string };
+  const data = (await response.json()) as {
+    access_token?: string;
+    expires_in?: number;
+  };
   if (!data.access_token) {
     throw new Error("IAM token missing in response.");
   }
 
+  cachedToken = data.access_token;
+  tokenExpiresAt = now + (data.expires_in ?? 3600) * 1000;
   return data.access_token;
 }
 
@@ -92,10 +108,12 @@ export async function POST(request: Request) {
 
     const accessToken = await getAccessToken(apiKey);
 
-    const history = (body.history || []).map((item) => ({
+    // Keep only the last 6 messages to reduce payload and model latency
+    const fullHistory = (body.history || []).map((item) => ({
       role: item.role,
       content: item.content,
     }));
+    const history = fullHistory.slice(-6);
 
     const payload = {
       messages: [
@@ -106,7 +124,7 @@ export async function POST(request: Request) {
       project_id: projectId,
       model_id: modelId,
       temperature: 0.4,
-      max_tokens: 1200,
+      max_tokens: 800,
     };
 
     const response = await fetch(CHAT_URL, {

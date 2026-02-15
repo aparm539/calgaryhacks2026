@@ -2,6 +2,7 @@ import {
   MAX_ARRAY_LENGTH,
   MAX_CODE_LINES,
   MAX_TIMELINE_STEPS,
+  REGISTRY_COMPONENT_TYPES,
   type ArraysChatHistoryMessage,
   type NormalizedArraysInput,
 } from "@/lib/arrays/types";
@@ -12,18 +13,18 @@ type PromptContext = {
   history?: ArraysChatHistoryMessage[];
 };
 
-type VizPromptContext = PromptContext & {
-  explanation: string;
-};
+type VizPromptContext = PromptContext;
 
 type RepairPromptContext = {
   question: string;
   normalizedInput: NormalizedArraysInput;
-  explanation: string;
   invalidSpec: string;
   validationError: string;
   repairHint?: string;
 };
+
+const allowedComponentTypes = REGISTRY_COMPONENT_TYPES.join(", ");
+const allowedComponentTypesPipe = REGISTRY_COMPONENT_TYPES.join("|");
 
 function formatInputSummary(input: NormalizedArraysInput) {
   const targetText =
@@ -45,31 +46,10 @@ function formatHistory(history?: ArraysChatHistoryMessage[]) {
     .join("\n");
 }
 
-export function buildExplainerPrompts({
-  question,
-  normalizedInput,
-  history,
-}: PromptContext) {
-  const system = `You are an algorithms tutor focused on arrays.
-Give a concise, educational explanation only.
-Constraints:
-- 3 to 6 sentences.
-- Plain text only.
-- Mention key invariant and complexity in simple terms.
-- Use the provided normalized input exactly.`;
-
-  const user = `User question:\n${question}\n\nNormalized input:\n${formatInputSummary(
-    normalizedInput
-  )}\n\nRecent chat history:\n${formatHistory(history)}`;
-
-  return { system, user };
-}
-
 export function buildVisualizationPrompts({
   question,
   normalizedInput,
   history,
-  explanation,
 }: VizPromptContext) {
   const system = `Return JSON only (no markdown, no prose).
 Generate a complete arrays visualization spec using this exact structure:
@@ -80,7 +60,7 @@ Generate a complete arrays visualization spec using this exact structure:
   "code": { "lines": ["string", "..."] },
   "scene": {
     "components": [
-      { "id": "string", "type": "ArrayView|BarArrayView|Pointer|RangeHighlight|SwapAnimation|CompareAnimation|CaptionCallout|CodeBlock|TimelineStepper|StackView|PartitionView|MergeView" }
+      { "id": "string", "type": "${allowedComponentTypesPipe}" }
     ]
   },
   "steps": [
@@ -104,7 +84,7 @@ Generate a complete arrays visualization spec using this exact structure:
   ]
 }
 Hard rules:
-- Allowed component types: ArrayView, BarArrayView, Pointer, RangeHighlight, SwapAnimation, CompareAnimation, CaptionCallout, CodeBlock, TimelineStepper, StackView, PartitionView, MergeView.
+- Allowed component types: ${allowedComponentTypes}.
 - Use only the allowed component types and event types.
 - Include each component type at most once in scene.components.
 - Always include a CodeBlock component in scene.components.
@@ -128,9 +108,7 @@ Hard rules:
 
   const user = `User question:\n${question}\n\nNormalized input:\n${formatInputSummary(
     normalizedInput
-  )}\n\nExplanation text:\n${explanation}\n\nRecent chat history:\n${formatHistory(
-    history
-  )}\n\nReturn only JSON.`;
+  )}\n\nRecent chat history:\n${formatHistory(history)}\n\nReturn only JSON.`;
 
   return { system, user };
 }
@@ -138,7 +116,6 @@ Hard rules:
 export function buildSpecRepairPrompts({
   question,
   normalizedInput,
-  explanation,
   invalidSpec,
   validationError,
   repairHint,
@@ -167,9 +144,6 @@ ${question}
 
 Normalized input:
 ${formatInputSummary(normalizedInput)}
-
-Explanation:
-${explanation}
 
 Validation errors:
 ${validationError}

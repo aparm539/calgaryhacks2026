@@ -1,3 +1,5 @@
+import { ARRAYS_COMPONENT_TYPES } from "@/lib/visualization/component-registry";
+
 export const MAX_ARRAY_LENGTH = 32;
 export const MAX_TIMELINE_STEPS = 300;
 export const MAX_CODE_LINES = 40;
@@ -72,20 +74,7 @@ export type StepSpec = {
   events?: StepEvent[];
 };
 
-export const REGISTRY_COMPONENT_TYPES = [
-  "ArrayView",
-  "BarArrayView",
-  "Pointer",
-  "RangeHighlight",
-  "SwapAnimation",
-  "CompareAnimation",
-  "CaptionCallout",
-  "CodeBlock",
-  "TimelineStepper",
-  "StackView",
-  "PartitionView",
-  "MergeView",
-] as const;
+export const REGISTRY_COMPONENT_TYPES = ARRAYS_COMPONENT_TYPES;
 
 export type RegistryComponentType = (typeof REGISTRY_COMPONENT_TYPES)[number];
 
@@ -125,7 +114,6 @@ export type ArraysVizSpec = {
 };
 
 export type ArraysChatSuccessResponse = {
-  explanation: string;
   spec: ArraysVizSpec;
   normalizedInput: NormalizedArraysInput;
 };

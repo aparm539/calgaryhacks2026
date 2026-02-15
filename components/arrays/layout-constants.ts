@@ -11,9 +11,5 @@ export function getTrackWidth(length: number) {
     return 0;
   }
 
-  return (
-    ARRAY_TRACK_PADDING * 2 +
-    length * ARRAY_CELL_WIDTH +
-    (length - 1) 
-  );
+  return ARRAY_TRACK_PADDING * 2 + length * ARRAY_CELL_WIDTH;
 }

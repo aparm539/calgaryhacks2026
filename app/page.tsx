@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { ChatUI } from "@/components/chat-ui";
 import { DSAPlayground } from "@/components/dsa-playground";
-import { ArraysChatUI } from "@/components/arrays/arrays-chat-ui";
 import { ArraysVisualizer } from "@/components/arrays/arrays-visualizer";
 import type { PlaygroundUpdate } from "@/lib/dsa-playground-types";
 import type {
@@ -33,22 +32,25 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center gap-4 bg-muted/30 p-4">
-      <div className="flex w-full max-w-6xl flex-col gap-4">
-        <DSAPlayground
-          key={`playground-${playgroundVersion}`}
-          externalUpdate={playgroundUpdate}
+    <div className="min-h-screen bg-muted/30 p-4">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+        {playgroundUpdate && (
+          <DSAPlayground
+            key={`playground-${playgroundVersion}`}
+            externalUpdate={playgroundUpdate}
+          />
+        )}
+        {arraysSpec && (
+          <ArraysVisualizer
+            key={`arrays-${arraysVersion}`}
+            spec={arraysSpec}
+            normalizedInput={normalizedArraysInput}
+          />
+        )}
+        <ChatUI
+          onPlaygroundUpdate={handlePlaygroundUpdate}
+          onArraysResult={handleArraysResult}
         />
-        <ChatUI onPlaygroundUpdate={handlePlaygroundUpdate} />
-      </div>
-
-      <div className="flex w-full max-w-6xl flex-col gap-4">
-        <ArraysVisualizer
-          key={`arrays-${arraysVersion}`}
-          spec={arraysSpec}
-          normalizedInput={normalizedArraysInput}
-        />
-        <ArraysChatUI onResult={handleArraysResult} />
       </div>
     </div>
   );

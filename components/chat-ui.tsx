@@ -1,16 +1,19 @@
 "use client";
 
-// Chat panel — sends messages to the Watsonx API and displays text responses.
-// Extracts dsaupdate / flowjson blocks from the model output and forwards
-// them to the DSA Playground via the onPlaygroundUpdate callback.
+// Shared chat panel — routes each prompt to the needed visualizer APIs.
+// It extracts DSA updates and forwards arrays payloads to parent callbacks.
 
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Send } from "lucide-react";
+import { Send, ChevronDown } from "lucide-react";
 import type { PlaygroundUpdate, StructureMode } from "@/lib/dsa-playground-types";
+import type {
+  ArraysChatErrorResponse,
+  ArraysChatSuccessResponse,
+} from "@/lib/arrays/types";
 
 // A single chat message (user or assistant)
 export type Message = {
@@ -21,7 +24,134 @@ export type Message = {
 
 type ChatUIProps = {
   onPlaygroundUpdate?: (update: PlaygroundUpdate) => void;
+  onArraysResult?: (payload: ArraysChatSuccessResponse) => void;
 };
+
+type ChatHistoryItem = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+type DSAChatSuccessResponse = {
+  content: string;
+};
+
+type DSAChatErrorResponse = {
+  error: string;
+};
+
+type RouteDecisionSuccessResponse = {
+  callDSA: boolean;
+  callArrays: boolean;
+  reason?: string;
+  source?: "model" | "fallback";
+};
+
+type RouteDecisionErrorResponse = {
+  error: string;
+};
+
+function formatErrorMessage(payload: unknown, fallback: string) {
+  if (!payload || typeof payload !== "object") {
+    return fallback;
+  }
+
+  const error =
+    "error" in payload && typeof payload.error === "string"
+      ? payload.error
+      : null;
+  const details =
+    "details" in payload && typeof payload.details === "string"
+      ? payload.details
+      : null;
+
+  if (!error) {
+    return fallback;
+  }
+
+  if (details) {
+    return `${error} ${details}`;
+  }
+
+  return error;
+}
+
+function shouldRequestArraysResult(prompt: string) {
+  const hasArrayLiteral = /\[[^\]]+\]/.test(prompt);
+  if (!hasArrayLiteral) {
+    return false;
+  }
+
+  const lowerPrompt = prompt.toLowerCase();
+  return (
+    lowerPrompt.includes("array") ||
+    lowerPrompt.includes("search") ||
+    lowerPrompt.includes("sort") ||
+    lowerPrompt.includes("quick") ||
+    lowerPrompt.includes("merge")
+  );
+}
+
+async function requestDSAChat(message: string, history: ChatHistoryItem[]) {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | DSAChatSuccessResponse
+    | DSAChatErrorResponse
+    | null;
+
+  if (!response.ok || !payload || "error" in payload) {
+    throw new Error(formatErrorMessage(payload, "DSA request failed."));
+  }
+
+  return payload;
+}
+
+async function requestArraysChat(message: string, history: ChatHistoryItem[]) {
+  const response = await fetch("/api/arrays/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | ArraysChatSuccessResponse
+    | ArraysChatErrorResponse
+    | null;
+
+  if (!response.ok || !payload || "error" in payload) {
+    throw new Error(formatErrorMessage(payload, "Arrays request failed."));
+  }
+
+  return payload;
+}
+
+async function requestRouteDecision(
+  message: string,
+  dsaHistory: ChatHistoryItem[],
+  arraysHistory: ChatHistoryItem[]
+) {
+  const response = await fetch("/api/chat/route-decision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, dsaHistory, arraysHistory }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | RouteDecisionSuccessResponse
+    | RouteDecisionErrorResponse
+    | null;
+
+  if (!response.ok || !payload || "error" in payload) {
+    throw new Error(formatErrorMessage(payload, "Route decision request failed."));
+  }
+
+  return payload;
+}
 
 // Loose shape used when trying to infer a playground update from flowjson
 type FlowJsonLike = {
@@ -185,10 +315,13 @@ function inferPlaygroundUpdateFromFlow(content: string): PlaygroundUpdate | null
 }
 
 // Main chat component
-export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
+export function ChatUI({ onPlaygroundUpdate, onArraysResult }: ChatUIProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [dsaHistory, setDsaHistory] = useState<ChatHistoryItem[]>([]);
+  const [arraysHistory, setArraysHistory] = useState<ChatHistoryItem[]>([]);
+  const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when a new message arrives
@@ -196,7 +329,19 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Send the user message to /api/chat and process the response
+  const toggleMessageCollapse = (messageId: string) => {
+    setCollapsedMessages((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  };
+
+  // Send one prompt, route it with the router API, then call selected visualizers
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -212,42 +357,115 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
     setIsLoading(true);
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: messages.map((item) => ({
-            role: item.role,
-            content: item.content,
-          })),
-        }),
-      });
-
-      const data = (await response.json()) as
-        | { content: string }
-        | { error: string };
-
-      if (!response.ok || "error" in data) {
-        throw new Error(
-          "error" in data ? data.error : "Request failed."
-        );
+      let routeDecision: RouteDecisionSuccessResponse;
+      try {
+        routeDecision = await requestRouteDecision(text, dsaHistory, arraysHistory);
+      } catch {
+        routeDecision = {
+          callDSA: true,
+          callArrays: shouldRequestArraysResult(text),
+          source: "fallback",
+          reason: "Client-side fallback routing.",
+        };
       }
 
-      const assistantMessage: Message = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: data.content,
-      };
+      const [dsaResult, arraysResult] = await Promise.allSettled([
+        routeDecision.callDSA
+          ? requestDSAChat(text, dsaHistory)
+          : Promise.resolve<DSAChatSuccessResponse | null>(null),
+        routeDecision.callArrays
+          ? requestArraysChat(text, arraysHistory)
+          : Promise.resolve<ArraysChatSuccessResponse | null>(null),
+      ]);
 
-      // Try to extract a playground update (dsaupdate first, flowjson fallback)
-      const update =
-        extractPlaygroundUpdate(data.content) ||
-        inferPlaygroundUpdateFromFlow(data.content);
-      if (update) {
-        onPlaygroundUpdate?.(update);
+      const nextDsaHistory: ChatHistoryItem[] = routeDecision.callDSA
+        ? [...dsaHistory, { role: "user", content: text }]
+        : dsaHistory;
+      const nextArraysHistory: ChatHistoryItem[] = routeDecision.callArrays
+        ? [...arraysHistory, { role: "user", content: text }]
+        : arraysHistory;
+
+      let dsaText: string | null = null;
+      let arraysText: string | null = null;
+      let dsaError: string | null = null;
+      let arraysError: string | null = null;
+
+      if (
+        routeDecision.callDSA &&
+        dsaResult.status === "fulfilled" &&
+        dsaResult.value
+      ) {
+        const assistantContent = dsaResult.value.content;
+        const update =
+          extractPlaygroundUpdate(assistantContent) ||
+          inferPlaygroundUpdateFromFlow(assistantContent);
+        if (update) {
+          onPlaygroundUpdate?.(update);
+        }
+
+        dsaText = stripCodeBlocks(assistantContent) || "DSA playground updated.";
+
+        setDsaHistory([
+          ...nextDsaHistory,
+          { role: "assistant", content: assistantContent },
+        ]);
+      } else if (routeDecision.callDSA && dsaResult.status === "rejected") {
+        dsaError =
+          dsaResult.reason instanceof Error
+            ? dsaResult.reason.message
+            : "Unable to reach DSA API.";
+        setDsaHistory(nextDsaHistory);
       }
-      setMessages((prev) => [...prev, assistantMessage]);
+
+      if (
+        routeDecision.callArrays &&
+        arraysResult.status === "fulfilled" &&
+        arraysResult.value
+      ) {
+        const arraysPayload = arraysResult.value;
+        onArraysResult?.(arraysPayload);
+        const arraysStatusText = `Arrays visualization updated for ${arraysPayload.normalizedInput.algorithm}.`;
+        arraysText = arraysStatusText;
+        setArraysHistory([
+          ...nextArraysHistory,
+          { role: "assistant", content: arraysStatusText },
+        ]);
+      } else if (routeDecision.callArrays && arraysResult.status === "rejected") {
+        arraysError =
+          arraysResult.reason instanceof Error
+            ? arraysResult.reason.message
+            : "Unable to reach arrays API.";
+        setArraysHistory(nextArraysHistory);
+      } else if (routeDecision.callArrays) {
+        setArraysHistory(nextArraysHistory);
+      }
+
+      const sections: string[] = [];
+      if (dsaText && arraysText) {
+        sections.push(`DSA Playground\n${dsaText}`);
+        sections.push(`Arrays Visualizer\n${arraysText}`);
+      } else {
+        if (dsaText) sections.push(dsaText);
+        if (arraysText) sections.push(arraysText);
+      }
+      if (dsaError) {
+        sections.push(`DSA error: ${dsaError}`);
+      }
+      if (routeDecision.callArrays && arraysError) {
+        sections.push(`Arrays error: ${arraysError}`);
+      }
+      if (sections.length === 0) {
+        sections.push("No response generated.");
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: sections.join("\n\n"),
+        },
+      ]);
     } catch (error) {
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -264,44 +482,63 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-2rem)] w-full max-w-2xl flex-col rounded-xl border bg-card shadow-sm">
-      <div className="border-b px-4 py-3">
-        <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
+    <div className="flex h-[360px] min-h-[300px] w-full flex-col rounded-xl border bg-card shadow-sm">
+      <div className="border-b px-4 py-3 flex-shrink-0">
+        <h2 className="font-semibold text-foreground">Visualizer Chat</h2>
         <p className="text-xs text-muted-foreground">
-          Prompt a data structure or algorithm to get a diagram.
+          One chat updates both the DSA playground and arrays visualizer.
         </p>
       </div>
 
-      <ScrollArea className="flex-1 p-4">
-        <div className="flex flex-col gap-4">
+      <ScrollArea className="flex-1 overflow-hidden">
+        <div className="flex flex-col gap-4 p-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
               <p className="text-sm">No messages yet.</p>
               <p className="text-xs">Send a message to start the conversation.</p>
             </div>
           )}
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={cn(
-                "flex w-full",
-                msg.role === "user" ? "justify-end" : "justify-start"
-              )}
-            >
+          {messages.map((msg) => {
+            const isCollapsed = collapsedMessages.has(msg.id);
+            return (
               <div
+                key={msg.id}
                 className={cn(
-                  "max-w-[85%] rounded-lg px-4 py-2.5 text-sm",
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-foreground"
+                  "flex w-full",
+                  msg.role === "user" ? "justify-end" : "justify-start"
                 )}
               >
-                <p className="whitespace-pre-wrap">
-                  {stripCodeBlocks(msg.content)}
-                </p>
+                <div
+                  className={cn(
+                    "max-w-[85%] rounded-lg px-4 py-2.5 text-sm",
+                    msg.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-foreground"
+                  )}
+                >
+                  <div className="flex items-start gap-2">
+                    <button
+                      onClick={() => toggleMessageCollapse(msg.id)}
+                      className="mt-0.5 flex-shrink-0 focus:outline-none"
+                      aria-label={isCollapsed ? "Expand message" : "Collapse message"}
+                    >
+                      <ChevronDown
+                        className={cn(
+                          "size-4 transition-transform duration-200",
+                          isCollapsed && "-rotate-90"
+                        )}
+                      />
+                    </button>
+                    {!isCollapsed && (
+                      <p className="whitespace-pre-wrap flex-1">
+                        {stripCodeBlocks(msg.content)}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {isLoading && (
             <div className="flex justify-start">
               <div className="flex items-center gap-1.5 rounded-lg bg-muted px-4 py-2.5 text-sm text-muted-foreground">
@@ -317,12 +554,12 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
 
       <form
         onSubmit={handleSubmit}
-        className="flex gap-2 border-t p-4"
+        className="flex gap-2 border-t p-4 flex-shrink-0"
       >
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Try: Visualize binary search on [1,3,5,7,9]"
+          placeholder="Try: Run quicksort on [9, 3, 7, 1, 5] or build a BST with 8,3,10"
           className="min-w-0 flex-1"
           disabled={isLoading}
         />

@@ -11,7 +11,6 @@ import {
   type NormalizedArraysInput,
 } from "@/lib/arrays/types";
 import {
-  buildExplainerPrompts,
   buildSpecRepairPrompts,
   buildVisualizationPrompts,
 } from "@/lib/arrays/prompts";
@@ -30,7 +29,6 @@ type BuildSpecParams = {
   accessToken: string;
   question: string;
   history: ArraysChatHistoryMessage[];
-  explanation: string;
   normalizedInput: NormalizedArraysInput;
 };
 
@@ -112,14 +110,12 @@ async function generateValidatedSpec({
   accessToken,
   question,
   history,
-  explanation,
   normalizedInput,
 }: BuildSpecParams) {
   const visualizationPrompts = buildVisualizationPrompts({
     question,
     normalizedInput,
     history,
-    explanation,
   });
 
   let candidateSpec = await callWatsonxChat({
@@ -156,7 +152,6 @@ async function generateValidatedSpec({
       const repairPrompts = buildSpecRepairPrompts({
         question,
         normalizedInput,
-        explanation,
         invalidSpec: candidateSpec,
         validationError: error.details ?? error.message,
         repairHint: buildRepairHint(error.details),
@@ -209,25 +204,6 @@ export async function POST(request: Request) {
 
     const accessToken = await getWatsonxAccessToken(apiKey);
 
-    const explainerPrompts = buildExplainerPrompts({
-      question: message,
-      normalizedInput,
-      history,
-    });
-
-    const explanation = await callWatsonxChat({
-      apiKey,
-      projectId,
-      modelId,
-      accessToken,
-      messages: [
-        { role: "system", content: explainerPrompts.system },
-        { role: "user", content: explainerPrompts.user },
-      ],
-      temperature: 0.35,
-      maxTokens: 700,
-    });
-
     const spec = await generateValidatedSpec({
       apiKey,
       projectId,
@@ -235,12 +211,10 @@ export async function POST(request: Request) {
       accessToken,
       question: message,
       history,
-      explanation,
       normalizedInput,
     });
 
     return NextResponse.json({
-      explanation,
       spec,
       normalizedInput,
     });

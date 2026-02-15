@@ -17,11 +17,8 @@ export function RangeHighlight({ range, arrayLength }: RangeHighlightProps) {
     return null;
   }
 
-  const left = indexToX(range.l) - 2;
-  const width =
-    (range.r - range.l + 1) * ARRAY_CELL_WIDTH +
-    Math.max(0, range.r - range.l) * 
-    4;
+  const left = indexToX(range.l);
+  const width = (range.r - range.l + 1) * ARRAY_CELL_WIDTH;
 
   return (
     <div

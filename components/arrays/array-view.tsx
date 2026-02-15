@@ -2,7 +2,11 @@
 
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { ARRAY_CELL_WIDTH } from "@/components/arrays/layout-constants";
+import {
+  ARRAY_CELL_WIDTH,
+  ARRAY_TRACK_PADDING,
+  getTrackWidth,
+} from "@/components/arrays/layout-constants";
 
 type ArrayViewProps = {
   values: number[];
@@ -10,10 +14,16 @@ type ArrayViewProps = {
 };
 
 export function ArrayView({ values, className }: ArrayViewProps) {
+  const trackWidth = getTrackWidth(values.length);
+
   return (
-    <div className={cn("space-y-2", className)}>
+    <div
+      className={cn("space-y-2", className)}
+      style={{ width: Math.max(trackWidth, 120) }}
+    >
       <div
         className="flex text-[10px] font-medium text-muted-foreground"
+        style={{ marginLeft: ARRAY_TRACK_PADDING }}
       >
         {values.map((_, index) => (
           <div
@@ -25,7 +35,7 @@ export function ArrayView({ values, className }: ArrayViewProps) {
           </div>
         ))}
       </div>
-      <div className="flex">
+      <div className="flex" style={{ marginLeft: ARRAY_TRACK_PADDING }}>
         {values.map((value, index) => (
           <motion.div
             key={`value-${index}-${value}`}

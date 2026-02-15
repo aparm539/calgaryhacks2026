@@ -8,7 +8,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { FlowDiagram } from "@/components/flow-diagram";
+import { DSARegistryRenderer } from "@/components/dsa/registry-renderer";
+import { DEFAULT_DSA_COMPONENTS } from "@/lib/dsa/registry-types";
 import type { PlaygroundUpdate, StructureMode } from "@/lib/dsa-playground-types";
 
 // Node shape used when building React Flow JSON
@@ -550,7 +551,7 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
   }, [isPlaying, activeFrames]);
 
   return (
-    <div className="flex w-full max-w-6xl flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm">
+    <div className="flex w-full flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm">
       <div>
         <h2 className="font-semibold text-foreground">Interactive DSA Playground</h2>
         <p className="text-xs text-muted-foreground">
@@ -667,7 +668,11 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
         </div>
       )}
 
-      <FlowDiagram key={`${mode}-${flowCode}`} code={flowCode} />
+      <DSARegistryRenderer
+        components={DEFAULT_DSA_COMPONENTS}
+        flowCode={flowCode}
+        flowKey={`${mode}-${flowCode}`}
+      />
     </div>
   );
 }
