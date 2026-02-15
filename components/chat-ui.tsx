@@ -12,9 +12,12 @@ import { Send, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { PlaygroundUpdate, StructureMode } from "@/lib/dsa-playground-types";
-import type {
-  ArraysChatErrorResponse,
-  ArraysChatSuccessResponse,
+import {
+  DEFAULT_OPENROUTER_ARRAYS_MODEL,
+  OPENROUTER_ARRAYS_MODELS,
+  type ArraysProvider,
+  type ArraysChatErrorResponse,
+  type ArraysChatSuccessResponse,
 } from "@/lib/arrays/types";
 
 // A single chat message (user or assistant)
@@ -127,11 +130,25 @@ async function requestDSAChat(message: string, history: ChatHistoryItem[]) {
   return payload;
 }
 
-async function requestArraysChat(message: string, history: ChatHistoryItem[]) {
+type ArraysRequestOptions = {
+  provider: ArraysProvider;
+  modelId?: string;
+};
+
+async function requestArraysChat(
+  message: string,
+  history: ChatHistoryItem[],
+  options: ArraysRequestOptions
+) {
   const response = await fetch("/api/arrays/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({
+      message,
+      history,
+      provider: options.provider,
+      modelId: options.modelId,
+    }),
   });
 
   const payload = (await response.json().catch(() => null)) as
@@ -363,6 +380,11 @@ export function ChatUI({
   const [explanationHistory, setExplanationHistory] = useState<ChatHistoryItem[]>([]);
   const [dsaHistory, setDsaHistory] = useState<ChatHistoryItem[]>([]);
   const [arraysHistory, setArraysHistory] = useState<ChatHistoryItem[]>([]);
+  const [arraysProvider, setArraysProvider] = useState<ArraysProvider>("watson");
+  const [watsonModelId, setWatsonModelId] = useState("");
+  const [openRouterModelId, setOpenRouterModelId] = useState(
+    DEFAULT_OPENROUTER_ARRAYS_MODEL
+  );
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -427,7 +449,13 @@ export function ChatUI({
           ? requestDSAChat(text, dsaHistory)
           : Promise.resolve<DSAChatSuccessResponse | null>(null),
         routeDecision.callArrays
-          ? requestArraysChat(text, arraysHistory)
+          ? requestArraysChat(text, arraysHistory, {
+              provider: arraysProvider,
+              modelId:
+                arraysProvider === "openrouter"
+                  ? openRouterModelId.trim() || undefined
+                  : watsonModelId.trim() || undefined,
+            })
           : Promise.resolve<ArraysChatSuccessResponse | null>(null),
       ]);
 
@@ -555,6 +583,7 @@ export function ChatUI({
             One chat routes to the DSA playground or arrays visualizer.
           </p>
         </div>
+        <div className="flex flex-col items-end gap-2">
         <Button
           className="bg-red-400 hover:bg-red-300"
           type="button"
@@ -567,6 +596,54 @@ export function ChatUI({
         >
           CleanALL
         </Button>
+          <div className="flex flex-col gap-1">
+            <label className="sr-only" htmlFor="arrays-provider">
+              Arrays provider
+            </label>
+            <select
+              id="arrays-provider"
+              value={arraysProvider}
+              onChange={(event) => setArraysProvider(event.target.value as ArraysProvider)}
+              disabled={isLoading}
+              className="h-8 w-[220px] rounded-md border border-input bg-background px-2 text-xs text-foreground"
+            >
+              <option value="watson">Watsonx</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+            <label
+              className="sr-only"
+              htmlFor={arraysProvider === "openrouter" ? "openrouter-model" : "watson-model"}
+            >
+              {arraysProvider === "openrouter" ? "OpenRouter model" : "Watson model"}
+            </label>
+            <Input
+              id={arraysProvider === "openrouter" ? "openrouter-model" : "watson-model"}
+              value={arraysProvider === "openrouter" ? openRouterModelId : watsonModelId}
+              onChange={(event) => {
+                if (arraysProvider === "openrouter") {
+                  setOpenRouterModelId(event.target.value);
+                } else {
+                  setWatsonModelId(event.target.value);
+                }
+              }}
+              list={arraysProvider === "openrouter" ? "openrouter-model-options" : undefined}
+              placeholder={
+                arraysProvider === "openrouter"
+                  ? "openai/gpt-4o-mini"
+                  : "meta-llama/llama-3-3-70b-instruct"
+              }
+              disabled={isLoading}
+              className="h-8 w-[220px] text-xs"
+            />
+          </div>
+          <datalist id="openrouter-model-options">
+            {OPENROUTER_ARRAYS_MODELS.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.label}
+              </option>
+            ))}
+          </datalist>
+        </div>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
