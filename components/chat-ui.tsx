@@ -547,7 +547,7 @@ export function ChatUI({
   }
 
   return (
-    <div className="flex h-[70vh] min-h-[300px] w-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
+    <div className="flex h-full min-h-[300px] w-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
       <div className="border-b px-4 py-3 flex items-center justify-between flex-shrink-0">
         <div>
           <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
@@ -565,7 +565,7 @@ export function ChatUI({
             setMessages([]);
           }}
         >
-          Reset
+          CleanALL
         </Button>
       </div>
 

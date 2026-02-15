@@ -43,7 +43,15 @@ export default function Home() {
   };
 
   const handleClearMessages = () => {
+    // Reset everything
     setMessages([]);
+    setPlaygroundUpdate(null);
+    setPlaygroundVersion(0);
+    setLearningMode(false);
+    setCurrentStructure(null);
+    setArraysSpec(null);
+    setArraysVersion(0);
+    setNormalizedArraysInput(null);
   };
 
   const handleArraysResult = (payload: ArraysChatSuccessResponse) => {
@@ -53,8 +61,8 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-muted/30 p-4">
-      <div className="mx-auto flex w-full max-w-7xl gap-4">
+    <div className="min-h-screen bg-muted/30 p-4 flex flex-col">
+      <div className="mx-auto flex w-full max-w-7xl gap-4 flex-1">
         <div className="min-w-0 flex-1 flex flex-col gap-4">
           {(playgroundUpdate || learningMode) && (
             <DSAPlayground
