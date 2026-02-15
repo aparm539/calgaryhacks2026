@@ -17,6 +17,7 @@ import {
   type Node,
   type NodeChange,
 } from "@xyflow/react";
+import { CustomNode } from "./custom-node";
 
 // Props: `code` is a JSON string with { nodes, edges }
 type FlowDiagramProps = {
@@ -27,6 +28,10 @@ type FlowDiagramProps = {
 type FlowJson = {
   nodes?: Node[];
   edges?: Edge[];
+};
+
+const nodeTypes = {
+  custom: CustomNode,
 };
 
 // Safely parse the JSON string into a FlowJson object
@@ -152,6 +157,7 @@ export function FlowDiagram({ code }: FlowDiagramProps) {
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}

@@ -15,7 +15,7 @@ import type { PlaygroundUpdate, StructureMode } from "@/lib/dsa-playground-types
 type FlowNode = {
   id: string;
   position: { x: number; y: number };
-  data: { label: string };
+  data: { label: string; status?: "default" | "active" };
   type?: string;
 };
 
@@ -164,14 +164,16 @@ function buildBSTFlow(values: number[], highlighted: number | null) {
     if (!node) return;
     const y = depth * 110 + 40;
 
+    const status: FlowNode["data"]["status"] =
+      highlighted === node.value ? "active" : "default";
+
     nodes.push({
       id: node.id,
+      type: "custom",
       position: { x, y },
       data: {
-        label:
-          highlighted !== null && node.value === highlighted
-            ? `${node.value} ★`
-            : String(node.value),
+        label: String(node.value),
+        status,
       },
     });
 
@@ -444,10 +446,12 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
     } else if (mode === "linked-list") {
       const parsed = parseValue();
       if (parsed === null) return;
-      setLinkedListValues((prev) => prev.filter((value, index) => {
-        const firstMatch = prev.indexOf(parsed);
-        return index !== firstMatch;
-      }));
+      setLinkedListValues((prev) =>
+        prev.filter((value, index) => {
+          const firstMatch = prev.indexOf(parsed);
+          return index !== firstMatch;
+        })
+      );
     } else if (mode === "queue") {
       setQueueValues((prev) => {
         const next = prev.slice(1);
@@ -558,12 +562,12 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
         </p>
       </div>
 
+
       {modelExplanation && (
         <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
           {modelExplanation}
         </div>
       )}
-
       <div className="flex flex-wrap gap-2">
         {(Object.keys(modeLabels) as StructureMode[]).map((item) => (
           <Button
@@ -668,7 +672,7 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
       )}
 
       <div className="flex-1 overflow-hidden">
-        <FlowDiagram key={`${mode}-${flowCode}`} code={flowCode} />
+        <FlowDiagram code={flowCode} />
       </div>
     </div>
   );
