@@ -584,17 +584,18 @@ export function ChatUI({
           </p>
         </div>
         <div className="flex flex-col items-end gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              onClearMessages?.();
-              setMessages([]);
-            }}
-          >
-            Reset
-          </Button>
+        <Button
+          className="bg-red-400 hover:bg-red-300"
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            onClearMessages?.();
+            setMessages([]);
+          }}
+        >
+          Reset
+        </Button>
           <div className="flex flex-col gap-1">
             <label className="sr-only" htmlFor="arrays-provider">
               Arrays provider
