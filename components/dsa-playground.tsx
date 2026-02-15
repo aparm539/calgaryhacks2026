@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { FlowDiagram } from "@/components/flow-diagram";
+import { AStarSearch } from "@/components/astar/astar-search";
 import type { PlaygroundUpdate, StructureMode } from "@/lib/dsa-playground-types";
 
 // Node shape used when building React Flow JSON
@@ -276,6 +277,7 @@ const modeLabels: Record<StructureMode, string> = {
   "linked-list": "Linked List",
   queue: "Queue",
   stack: "Stack",
+  astar: "A* Search",
 };
 
 type DSAPlaygroundProps = {
@@ -286,10 +288,12 @@ type DSAPlaygroundProps = {
 export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
   // Use the model-provided mode/values if available, otherwise defaults
   const initialMode = externalUpdate?.mode ?? "bst";
-  const initialValues = externalUpdate?.values
-    ?.map((value) => Number(value))
-    .filter((value) => Number.isFinite(value))
-    .slice(0, 24) ?? [];
+  const initialValues = externalUpdate?.mode === "astar"
+    ? []
+    : externalUpdate?.values
+      ?.map((value) => Number(value))
+      .filter((value) => Number.isFinite(value))
+      .slice(0, 24) ?? [];
   const initialBstValues =
     initialMode === "bst"
       ? Array.from(new Set(initialValues.length ? initialValues : [8, 3, 10, 1, 6, 14]))
@@ -366,6 +370,9 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
     }
     if (mode === "queue") {
       return buildQueueFlow(displayedQueue);
+    }
+    if (mode === "astar") {
+      return { nodes: [], edges: [] };
     }
     return buildStackFlow(displayedStack);
   }, [
@@ -562,7 +569,6 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
         </p>
       </div>
 
-
       {modelExplanation && (
         <div className="rounded-md border bg-background p-3 text-xs text-muted-foreground">
           {modelExplanation}
@@ -585,46 +591,48 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          value={valueInput}
-          onChange={(event) => setValueInput(event.target.value)}
-          placeholder={cn(
-            "Enter a number",
-            mode === "queue" && "Optional for dequeue",
-            mode === "stack" && "Optional for pop"
+      {mode !== "astar" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={valueInput}
+            onChange={(event) => setValueInput(event.target.value)}
+            placeholder={cn(
+              "Enter a number",
+              mode === "queue" && "Optional for dequeue",
+              mode === "stack" && "Optional for pop"
+            )}
+            className="w-full max-w-xs"
+          />
+          <Button type="button" onClick={onInsertLike}>
+            {mode === "queue" ? "Enqueue" : mode === "stack" ? "Push" : "Insert"}
+          </Button>
+          <Button type="button" variant="outline" onClick={onDeleteLike}>
+            {mode === "queue" ? "Dequeue" : mode === "stack" ? "Pop" : "Delete"}
+          </Button>
+          {mode === "bst" && (
+            <>
+              <Button type="button" variant="secondary" onClick={onSearchBST}>
+                Find
+              </Button>
+              <Button type="button" variant="outline" onClick={() => runBSTTraversal("pre")}>
+                Pre-order
+              </Button>
+              <Button type="button" variant="outline" onClick={() => runBSTTraversal("in")}>
+                In-order
+              </Button>
+              <Button type="button" variant="outline" onClick={() => runBSTTraversal("post")}>
+                Post-order
+              </Button>
+              <Button type="button" variant="outline" onClick={() => runBSTTraversal("level")}>
+                Level-order
+              </Button>
+            </>
           )}
-          className="w-full max-w-xs"
-        />
-        <Button type="button" onClick={onInsertLike}>
-          {mode === "queue" ? "Enqueue" : mode === "stack" ? "Push" : "Insert"}
-        </Button>
-        <Button type="button" variant="outline" onClick={onDeleteLike}>
-          {mode === "queue" ? "Dequeue" : mode === "stack" ? "Pop" : "Delete"}
-        </Button>
-        {mode === "bst" && (
-          <>
-            <Button type="button" variant="secondary" onClick={onSearchBST}>
-              Find
-            </Button>
-            <Button type="button" variant="outline" onClick={() => runBSTTraversal("pre")}>
-              Pre-order
-            </Button>
-            <Button type="button" variant="outline" onClick={() => runBSTTraversal("in")}>
-              In-order
-            </Button>
-            <Button type="button" variant="outline" onClick={() => runBSTTraversal("post")}>
-              Post-order
-            </Button>
-            <Button type="button" variant="outline" onClick={() => runBSTTraversal("level")}>
-              Level-order
-            </Button>
-          </>
-        )}
-        <Button type="button" variant="ghost" onClick={onReset}>
-          Reset
-        </Button>
-      </div>
+          <Button type="button" variant="ghost" onClick={onReset}>
+            Reset
+          </Button>
+        </div>
+      )}
 
       {(mode === "bst" || mode === "queue" || mode === "stack") && activeFrames.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background p-2">
@@ -672,7 +680,7 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
       )}
 
       <div className="flex-1 overflow-hidden">
-        <FlowDiagram code={flowCode} />
+        {mode === "astar" ? <AStarSearch /> : <FlowDiagram code={flowCode} />}
       </div>
     </div>
   );

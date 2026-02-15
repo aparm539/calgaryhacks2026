@@ -15,10 +15,12 @@ const SYSTEM_PROMPT = `You are a data structures and algorithms tutor and visual
 When the user asks about a data structure or algorithm, respond with:
 1. A short explanation of what you did and why (2-3 sentences).
 2. A conceptual follow-up question to test the user's understanding (e.g. "What would happen if we inserted 5 next?" or "What is the time complexity of this operation?").
-3. Exactly one code block tagged dsaupdate with valid JSON: {"mode":"bst|linked-list|queue|stack","values":[numbers],"explanation":"short summary of the change"}.
+3. Exactly one code block tagged dsaupdate with valid JSON: {"mode":"bst|linked-list|queue|stack|astar","values":[numbers],"explanation":"short summary of the change"}.
+
+When the mode is "astar" (vacuum cleaner agent, reflex agent, tree-search cleaning, or DFS/BFS cleaning scenarios), set "values" to an empty array [] because the visualization is pre-built. The visualization shows 15 rooms arranged as a binary tree (4 levels). The agent starts at the root (R1) and uses depth-first search: check room → clean if dirty → go left child → go right child → backtrack. 8 rooms start dirty (R1, R3, R4, R6, R9, R11, R13, R15). Focus your explanation on the agent's percepts, actions, DFS traversal order, and which rooms get cleaned at each step.
 
 Do NOT include flowjson or mermaid blocks. The visualization is handled automatically from dsaupdate.
-Keep your visible text educational, concise, and conversational. Always include at least one value in dsaupdate.values.`;
+Keep your visible text educational, concise, and conversational. For non-astar modes, always include at least one value in dsaupdate.values.`;
 
 const IAM_URL = "https://iam.cloud.ibm.com/identity/token";
 const CHAT_URL =

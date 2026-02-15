@@ -51,6 +51,9 @@ function normalizeMode(mode: string): StructureMode | null {
   }
   if (value === "queue") return "queue";
   if (value === "stack") return "stack";
+  if (value === "astar" || value === "a*" || value === "a-star" || value === "a_star") {
+    return "astar";
+  }
   return null;
 }
 
@@ -78,7 +81,8 @@ function extractPlaygroundUpdate(content: string): PlaygroundUpdate | null {
       .filter((item) => Number.isFinite(item))
       .slice(0, 24);
 
-    if (values.length === 0) {
+    // A* mode doesn't need values — the visualization is self-contained
+    if (values.length === 0 && mode !== "astar") {
       return null;
     }
 
@@ -88,7 +92,9 @@ function extractPlaygroundUpdate(content: string): PlaygroundUpdate | null {
       explanation:
         typeof parsed.explanation === "string" && parsed.explanation.trim()
           ? parsed.explanation.trim()
-          : `Model updated ${mode} with ${values.length} values.`,
+          : mode === "astar"
+            ? "Switched to A* search visualization."
+            : `Model updated ${mode} with ${values.length} values.`,
     };
   } catch {
     return null;
