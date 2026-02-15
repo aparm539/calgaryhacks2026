@@ -16,7 +16,7 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen flex-row gap-4 bg-muted/30 p-4">
+    <div className="flex h-screen flex-row gap-4 bg-[#b8b8ff]/30 p-4">
       <div className="flex-1">
         <DSAPlayground
           key={`playground-${playgroundVersion}`}

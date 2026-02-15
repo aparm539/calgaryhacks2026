@@ -307,8 +307,8 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
                   className={cn(
                     "max-w-[85%] rounded-lg px-4 py-2.5 text-sm",
                     msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-foreground"
+                      ? "bg-[#9381ff] text-primary-foreground"
+                      : "bg-[#b8b8ff] text-foreground"
                   )}
                 >
                   <div className="flex items-start gap-2">

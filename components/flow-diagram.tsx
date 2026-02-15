@@ -148,7 +148,7 @@ export function FlowDiagram({ code }: FlowDiagramProps) {
   }, []);
 
   return (
-    <div className="h-[360px] w-full overflow-hidden rounded-lg border bg-background">
+    <div className="h-[360px] w-full overflow-hidden rounded-lg border bg-dsaBg">
       <ReactFlow
         nodes={nodes}
         edges={edges}

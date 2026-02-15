@@ -50,10 +50,12 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  --background: #b8b8ff;
+  --bg-buttonPrimary: #8f6c90;
+  --dsaBg: #f8f7ff;
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card: oklch(100% 0.00011 271.152);
+  --card-foreground: oklch(100% 0.00011 271.152);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);

@@ -552,7 +552,7 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
   return (
     <div className="flex h-full w-full flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm">
       <div>
-        <h2 className="font-semibold text-foreground">Interactive DSA Playground</h2>
+        <h2 className="font-semibold text-foreground ">Interactive DSA Playground</h2>
         <p className="text-xs text-muted-foreground">
           BST, Linked List, Queue, and Stack in React Flow.
         </p>
@@ -626,7 +626,7 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background p-2">
           <Button
             type="button"
-            size="sm"
+            size="default"
             variant="outline"
             onClick={() => {
               setIsPlaying(false);
