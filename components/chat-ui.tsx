@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Send, ChevronDown } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { PlaygroundUpdate, StructureMode } from "@/lib/dsa-playground-types";
 import type {
   ArraysChatErrorResponse,
@@ -545,7 +547,7 @@ export function ChatUI({
   }
 
   return (
-    <div className="flex min-h-[300px] max-h-[70vh] w-full flex-col rounded-xl border bg-card shadow-sm overflow-hidden">
+    <div className="flex h-[70vh] min-h-[300px] w-full flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
       <div className="border-b px-4 py-3 flex items-center justify-between flex-shrink-0">
         <div>
           <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
@@ -567,7 +569,7 @@ export function ChatUI({
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 min-h-0 overflow-hidden">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-4 p-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
@@ -607,9 +609,36 @@ export function ChatUI({
                       />
                     </button>
                     {!isCollapsed && (
-                      <p className="whitespace-pre-wrap flex-1">
-                        {stripCodeBlocks(msg.content)}
-                      </p>
+                      msg.role === "assistant" ? (
+                        <div
+                          className={cn(
+                            "flex-1 break-words leading-relaxed",
+                            "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2",
+                            "[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:italic",
+                            "[&_h1]:mb-2 [&_h1]:text-base [&_h1]:font-semibold",
+                            "[&_h2]:mb-2 [&_h2]:text-sm [&_h2]:font-semibold",
+                            "[&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold",
+                            "[&_hr]:my-2 [&_hr]:border-border",
+                            "[&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5",
+                            "[&_p]:mb-2 [&_p:last-child]:mb-0",
+                            "[&_pre]:my-2 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-background/70 [&_pre]:p-2",
+                            "[&_table]:my-2 [&_table]:w-full [&_table]:border-collapse",
+                            "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1",
+                            "[&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left",
+                            "[&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5",
+                            "[&_code]:rounded-sm [&_code]:bg-background/70 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em]",
+                            "[&_pre_code]:bg-transparent [&_pre_code]:p-0"
+                          )}
+                        >
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {stripCodeBlocks(msg.content)}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <p className="flex-1 whitespace-pre-wrap break-words">
+                          {msg.content}
+                        </p>
+                      )
                     )}
                   </div>
                 </div>
