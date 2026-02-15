@@ -1,28 +1,202 @@
 "use client";
 
+// Chat panel — sends messages to the Watsonx API and displays text responses.
+// Extracts dsaupdate / flowjson blocks from the model output and forwards
+// them to the DSA Playground via the onPlaygroundUpdate callback.
+
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Send } from "lucide-react";
+import type { PlaygroundUpdate, StructureMode } from "@/lib/dsa-playground-types";
 
+// A single chat message (user or assistant)
 export type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
 };
 
-export function ChatUI() {
+type ChatUIProps = {
+  onPlaygroundUpdate?: (update: PlaygroundUpdate) => void;
+};
+
+// Loose shape used when trying to infer a playground update from flowjson
+type FlowJsonLike = {
+  nodes?: Array<{ id?: string; data?: { label?: string } }>;
+  edges?: Array<{ id?: string; label?: string; source?: string; target?: string }>;
+};
+
+// Remove ALL code blocks (dsaupdate, flowjson, json) so the chat only shows text
+function stripCodeBlocks(content: string) {
+  return content
+    .replace(/```dsaupdate[\s\S]*?```/gi, "")
+    .replace(/```(?:flowjson|json)[\s\S]*?```/gi, "")
+    .trim();
+}
+
+// Remove only dsaupdate blocks (used when building explanation text)
+function stripDsaUpdateBlocks(content: string) {
+  return content.replace(/```dsaupdate[\s\S]*?```/gi, "").trim();
+}
+
+// Map common mode strings to valid StructureMode values
+function normalizeMode(mode: string): StructureMode | null {
+  const value = mode.trim().toLowerCase();
+  if (value === "bst") return "bst";
+  if (value === "linked-list" || value === "linkedlist" || value === "linked_list") {
+    return "linked-list";
+  }
+  if (value === "queue") return "queue";
+  if (value === "stack") return "stack";
+  return null;
+}
+
+// Parse the ```dsaupdate``` code block from model output into a PlaygroundUpdate
+function extractPlaygroundUpdate(content: string): PlaygroundUpdate | null {
+  const match = content.match(/```dsaupdate([\s\S]*?)```/i);
+  if (!match) return null;
+
+  try {
+    const parsed = JSON.parse(match[1].trim()) as {
+      mode?: string;
+      values?: unknown[];
+      explanation?: string;
+    };
+
+    if (!parsed.mode || !Array.isArray(parsed.values)) {
+      return null;
+    }
+
+    const mode = normalizeMode(parsed.mode);
+    if (!mode) return null;
+
+    const values = parsed.values
+      .map((item) => Number(item))
+      .filter((item) => Number.isFinite(item))
+      .slice(0, 24);
+
+    if (values.length === 0) {
+      return null;
+    }
+
+    return {
+      mode,
+      values,
+      explanation:
+        typeof parsed.explanation === "string" && parsed.explanation.trim()
+          ? parsed.explanation.trim()
+          : `Model updated ${mode} with ${values.length} values.`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Extract the first flowjson/json code block (used as fallback)
+function parseFirstFlowJson(content: string): FlowJsonLike | null {
+  const match = content.match(/```(?:flowjson|json)([\s\S]*?)```/i);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim()) as FlowJsonLike;
+    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+// Pull numeric values out of node labels (e.g. "Node 42" → 42)
+function extractNumericValues(labels: string[]) {
+  const values: number[] = [];
+  labels.forEach((label) => {
+    const match = label.match(/-?\d+(?:\.\d+)?/g);
+    if (!match) return;
+    match.forEach((item) => {
+      const value = Number(item);
+      if (Number.isFinite(value)) values.push(value);
+    });
+  });
+  return values.slice(0, 24);
+}
+
+// Fallback: if no dsaupdate block exists, try to guess mode + values from flowjson
+function inferPlaygroundUpdateFromFlow(content: string): PlaygroundUpdate | null {
+  const flow = parseFirstFlowJson(content);
+  if (!flow?.nodes?.length) return null;
+
+  const nodeIds = flow.nodes.map((node) => String(node.id ?? "").toLowerCase());
+  const labels = flow.nodes.map((node) => String(node.data?.label ?? ""));
+  const lowerLabels = labels.map((item) => item.toLowerCase());
+  const edgeLabels = (flow.edges ?? []).map((edge) =>
+    String(edge.label ?? "").toLowerCase()
+  );
+
+  const hasQueueMarkers =
+    lowerLabels.some((label) => label.includes("front:")) ||
+    lowerLabels.some((label) => label.includes("rear:")) ||
+    nodeIds.some((id) => id.startsWith("q-"));
+  const hasStackMarkers =
+    lowerLabels.some((label) => label.includes("top:")) ||
+    nodeIds.some((id) => id.startsWith("s-"));
+  const hasLinkedListMarkers =
+    edgeLabels.some((label) => label.includes("next")) ||
+    nodeIds.some((id) => id.startsWith("ll-"));
+  const hasBSTMarkers = nodeIds.some((id) => id.startsWith("bst-"));
+
+  const mode: StructureMode = hasQueueMarkers
+    ? "queue"
+    : hasStackMarkers
+      ? "stack"
+      : hasLinkedListMarkers
+        ? "linked-list"
+        : hasBSTMarkers
+          ? "bst"
+          : "bst";
+
+  const filteredLabels = labels.filter((label) => {
+    const lower = label.toLowerCase();
+    return (
+      !lower.startsWith("front:") &&
+      !lower.startsWith("rear:") &&
+      !lower.startsWith("top:") &&
+      !lower.includes("empty")
+    );
+  });
+
+  const values = extractNumericValues(filteredLabels);
+  if (values.length === 0) return null;
+
+  const explanationText = stripDsaUpdateBlocks(content)
+    .replace(/```(?:flowjson|json)[\s\S]*?```/gi, "")
+    .trim();
+
+  return {
+    mode,
+    values,
+    explanation:
+      explanationText ||
+      `Inferred ${mode} update from flow diagram with ${values.length} values.`,
+  };
+}
+
+// Main chat component
+export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Auto-scroll to bottom when a new message arrives
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Send the user message to /api/chat and process the response
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const text = input.trim();
@@ -37,23 +211,64 @@ export function ChatUI() {
     setInput("");
     setIsLoading(true);
 
-    // Placeholder: echo back. Replace with real API call later.
-    await new Promise((r) => setTimeout(r, 600));
-    const assistantMessage: Message = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: `You said: ${text}`,
-    };
-    setMessages((prev) => [...prev, assistantMessage]);
-    setIsLoading(false);
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          history: messages.map((item) => ({
+            role: item.role,
+            content: item.content,
+          })),
+        }),
+      });
+
+      const data = (await response.json()) as
+        | { content: string }
+        | { error: string };
+
+      if (!response.ok || "error" in data) {
+        throw new Error(
+          "error" in data ? data.error : "Request failed."
+        );
+      }
+
+      const assistantMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: data.content,
+      };
+
+      // Try to extract a playground update (dsaupdate first, flowjson fallback)
+      const update =
+        extractPlaygroundUpdate(data.content) ||
+        inferPlaygroundUpdateFromFlow(data.content);
+      if (update) {
+        onPlaygroundUpdate?.(update);
+      }
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      const assistantMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content:
+          error instanceof Error
+            ? `Error: ${error.message}`
+            : "Error: Unable to reach the server.",
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
     <div className="flex h-[calc(100vh-2rem)] w-full max-w-2xl flex-col rounded-xl border bg-card shadow-sm">
       <div className="border-b px-4 py-3">
-        <h2 className="font-semibold text-foreground">Chat</h2>
+        <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
         <p className="text-xs text-muted-foreground">
-          Basic chatbot — connect an API to get real responses.
+          Prompt a data structure or algorithm to get a diagram.
         </p>
       </div>
 
@@ -81,7 +296,9 @@ export function ChatUI() {
                     : "bg-muted text-foreground"
                 )}
               >
-                {msg.content}
+                <p className="whitespace-pre-wrap">
+                  {stripCodeBlocks(msg.content)}
+                </p>
               </div>
             </div>
           ))}
@@ -105,7 +322,7 @@ export function ChatUI() {
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Type a message..."
+          placeholder="Try: Visualize binary search on [1,3,5,7,9]"
           className="min-w-0 flex-1"
           disabled={isLoading}
         />
