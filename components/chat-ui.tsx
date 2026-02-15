@@ -21,6 +21,9 @@ export type Message = {
 
 type ChatUIProps = {
   onPlaygroundUpdate?: (update: PlaygroundUpdate) => void;
+  messages?: Message[];
+  onAddMessage?: (message: Message) => void;
+  onClearMessages?: () => void;
 };
 
 // Loose shape used when trying to infer a playground update from flowjson
@@ -185,12 +188,22 @@ function inferPlaygroundUpdateFromFlow(content: string): PlaygroundUpdate | null
 }
 
 // Main chat component
-export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
+export function ChatUI({ 
+  onPlaygroundUpdate,
+  messages: externalMessages = [],
+  onAddMessage,
+  onClearMessages,
+}: ChatUIProps) {
+  const [messages, setMessages] = useState<Message[]>(externalMessages);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 同步外部messages
+  useEffect(() => {
+    setMessages(externalMessages);
+  }, [externalMessages]);
 
   // Auto-scroll to bottom when a new message arrives
   useEffect(() => {
@@ -220,7 +233,7 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
       role: "user",
       content: text,
     };
-    setMessages((prev) => [...prev, userMessage]);
+    onAddMessage?.(userMessage);
     setInput("");
     setIsLoading(true);
 
@@ -260,7 +273,7 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
       if (update) {
         onPlaygroundUpdate?.(update);
       }
-      setMessages((prev) => [...prev, assistantMessage]);
+      onAddMessage?.(assistantMessage);
     } catch (error) {
       const assistantMessage: Message = {
         id: crypto.randomUUID(),
@@ -270,7 +283,7 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
             ? `Error: ${error.message}`
             : "Error: Unable to reach the server.",
       };
-      setMessages((prev) => [...prev, assistantMessage]);
+      onAddMessage?.(assistantMessage);
     } finally {
       setIsLoading(false);
     }
@@ -278,11 +291,24 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
 
   return (
     <div className="flex h-full w-full flex-col rounded-xl border bg-card shadow-sm">
-      <div className="border-b px-4 py-3 flex-shrink-0">
-        <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
-        <p className="text-xs text-muted-foreground">
-          Prompt a data structure or algorithm to get a diagram.
-        </p>
+      <div className="border-b px-4 py-3 flex items-center justify-between shrink-0">
+        <div>
+          <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
+          <p className="text-xs text-muted-foreground">
+            Prompt a data structure or algorithm to get a diagram.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            onClearMessages?.();
+            setMessages([]);
+          }}
+        >
+          Reset
+        </Button>
       </div>
 
       <ScrollArea className="flex-1 overflow-hidden">
@@ -314,7 +340,7 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
                   <div className="flex items-start gap-2">
                     <button
                       onClick={() => toggleMessageCollapse(msg.id)}
-                      className="mt-0.5 flex-shrink-0 focus:outline-none"
+                      className="mt-0.5 shrink-0 focus:outline-none"
                       aria-label={isCollapsed ? "Expand message" : "Collapse message"}
                     >
                       <ChevronDown
@@ -349,7 +375,7 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
 
       <form
         onSubmit={handleSubmit}
-        className="flex gap-2 border-t p-4 flex-shrink-0"
+        className="flex gap-2 border-t p-4 shrink-0"
       >
         <Input
           value={input}

@@ -280,10 +280,18 @@ const modeLabels: Record<StructureMode, string> = {
 
 type DSAPlaygroundProps = {
   externalUpdate?: PlaygroundUpdate | null; // injected from the chat panel
+  learningMode?: boolean;
+  onLearningModeChange?: (mode: boolean) => void;
+  onStructureChange?: (structure: { mode: StructureMode; values: number[] }) => void;
 };
 
 // Main playground component
-export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
+export function DSAPlayground({ 
+  externalUpdate, 
+  learningMode = false,
+  onLearningModeChange,
+  onStructureChange,
+}: DSAPlaygroundProps) {
   // Use the model-provided mode/values if available, otherwise defaults
   const initialMode = externalUpdate?.mode ?? "bst";
   const initialValues = externalUpdate?.values
@@ -516,25 +524,6 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
     setIsPlaying(false);
   };
 
-  // Reset the current data structure to its default values
-  const onReset = () => {
-    if (mode === "bst") {
-      setBSTValues([8, 3, 10, 1, 6, 14]);
-      setBSTHighlight(null);
-      setBSTFrames([]);
-    } else if (mode === "linked-list") {
-      setLinkedListValues([4, 8, 15]);
-    } else if (mode === "queue") {
-      setQueueValues([10, 20, 30]);
-      setQueueFrames([{ label: "Initial queue", values: [10, 20, 30] }]);
-    } else {
-      setStackValues([2, 4, 6]);
-      setStackFrames([{ label: "Initial stack", values: [2, 4, 6] }]);
-    }
-    setFrameIndex(0);
-    setIsPlaying(false);
-  };
-
   // Auto-advance the timeline when playing
   useEffect(() => {
     if (!isPlaying || activeFrames.length < 2) return;
@@ -552,6 +541,12 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
 
     return () => clearInterval(timer);
   }, [isPlaying, activeFrames]);
+
+  // Refresh diagram and reset when learning mode changes
+  useEffect(() => {
+    setFrameIndex(0);
+    setIsPlaying(false);
+  }, [learningMode]);
 
   return (
     <div className="flex h-full w-full flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm">
@@ -583,6 +578,26 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
             {modeLabels[item]}
           </Button>
         ))}
+        <Button
+          type="button"
+          variant={learningMode ? "default" : "outline"}
+          onClick={() => {
+            const newLearningMode = !learningMode;
+            onLearningModeChange?.(newLearningMode);
+            if (newLearningMode) {
+              onStructureChange?.({
+                mode,
+                values:
+                  mode === "bst" ? bstValues :
+                  mode === "linked-list" ? linkedListValues :
+                  mode === "queue" ? queueValues :
+                  stackValues,
+              });
+            }
+          }}
+        >
+          Learning Mode
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -621,9 +636,6 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
             </Button>
           </>
         )}
-        <Button type="button" variant="ghost" onClick={onReset}>
-          Reset
-        </Button>
       </div>
 
       {(mode === "bst" || mode === "queue" || mode === "stack") && activeFrames.length > 0 && (
