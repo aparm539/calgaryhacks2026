@@ -550,7 +550,7 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
   }, [isPlaying, activeFrames]);
 
   return (
-    <div className="flex w-full max-w-6xl flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm">
+    <div className="flex h-full w-full flex-col gap-4 rounded-xl border bg-card p-4 shadow-sm">
       <div>
         <h2 className="font-semibold text-foreground">Interactive DSA Playground</h2>
         <p className="text-xs text-muted-foreground">
@@ -667,7 +667,9 @@ export function DSAPlayground({ externalUpdate }: DSAPlaygroundProps) {
         </div>
       )}
 
-      <FlowDiagram key={`${mode}-${flowCode}`} code={flowCode} />
+      <div className="flex-1 overflow-hidden">
+        <FlowDiagram key={`${mode}-${flowCode}`} code={flowCode} />
+      </div>
     </div>
   );
 }

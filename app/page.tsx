@@ -16,12 +16,16 @@ export default function Home() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center gap-4 bg-muted/30 p-4">
-      <DSAPlayground
-        key={`playground-${playgroundVersion}`}
-        externalUpdate={playgroundUpdate}
-      />
-      <ChatUI onPlaygroundUpdate={handlePlaygroundUpdate} />
+    <div className="flex h-screen flex-row gap-4 bg-muted/30 p-4">
+      <div className="flex-1">
+        <DSAPlayground
+          key={`playground-${playgroundVersion}`}
+          externalUpdate={playgroundUpdate}
+        />
+      </div>
+      <div className="flex-1">
+        <ChatUI onPlaygroundUpdate={handlePlaygroundUpdate} />
+      </div>
     </div>
   );
 }

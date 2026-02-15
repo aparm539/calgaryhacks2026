@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Send } from "lucide-react";
+import { Send, ChevronDown } from "lucide-react";
 import type { PlaygroundUpdate, StructureMode } from "@/lib/dsa-playground-types";
 
 // A single chat message (user or assistant)
@@ -189,12 +189,25 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when a new message arrives
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const toggleMessageCollapse = (messageId: string) => {
+    setCollapsedMessages((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  };
 
   // Send the user message to /api/chat and process the response
   async function handleSubmit(e: React.FormEvent) {
@@ -264,44 +277,63 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
   }
 
   return (
-    <div className="flex h-[calc(100vh-2rem)] w-full max-w-2xl flex-col rounded-xl border bg-card shadow-sm">
-      <div className="border-b px-4 py-3">
+    <div className="flex h-full w-full flex-col rounded-xl border bg-card shadow-sm">
+      <div className="border-b px-4 py-3 flex-shrink-0">
         <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
         <p className="text-xs text-muted-foreground">
           Prompt a data structure or algorithm to get a diagram.
         </p>
       </div>
 
-      <ScrollArea className="flex-1 p-4">
-        <div className="flex flex-col gap-4">
+      <ScrollArea className="flex-1 overflow-hidden">
+        <div className="flex flex-col gap-4 p-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
               <p className="text-sm">No messages yet.</p>
               <p className="text-xs">Send a message to start the conversation.</p>
             </div>
           )}
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={cn(
-                "flex w-full",
-                msg.role === "user" ? "justify-end" : "justify-start"
-              )}
-            >
+          {messages.map((msg) => {
+            const isCollapsed = collapsedMessages.has(msg.id);
+            return (
               <div
+                key={msg.id}
                 className={cn(
-                  "max-w-[85%] rounded-lg px-4 py-2.5 text-sm",
-                  msg.role === "user"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-foreground"
+                  "flex w-full",
+                  msg.role === "user" ? "justify-end" : "justify-start"
                 )}
               >
-                <p className="whitespace-pre-wrap">
-                  {stripCodeBlocks(msg.content)}
-                </p>
+                <div
+                  className={cn(
+                    "max-w-[85%] rounded-lg px-4 py-2.5 text-sm",
+                    msg.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-foreground"
+                  )}
+                >
+                  <div className="flex items-start gap-2">
+                    <button
+                      onClick={() => toggleMessageCollapse(msg.id)}
+                      className="mt-0.5 flex-shrink-0 focus:outline-none"
+                      aria-label={isCollapsed ? "Expand message" : "Collapse message"}
+                    >
+                      <ChevronDown
+                        className={cn(
+                          "size-4 transition-transform duration-200",
+                          isCollapsed && "-rotate-90"
+                        )}
+                      />
+                    </button>
+                    {!isCollapsed && (
+                      <p className="whitespace-pre-wrap flex-1">
+                        {stripCodeBlocks(msg.content)}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {isLoading && (
             <div className="flex justify-start">
               <div className="flex items-center gap-1.5 rounded-lg bg-muted px-4 py-2.5 text-sm text-muted-foreground">
@@ -317,7 +349,7 @@ export function ChatUI({ onPlaygroundUpdate }: ChatUIProps) {
 
       <form
         onSubmit={handleSubmit}
-        className="flex gap-2 border-t p-4"
+        className="flex gap-2 border-t p-4 flex-shrink-0"
       >
         <Input
           value={input}
