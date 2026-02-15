@@ -362,16 +362,27 @@ export function ChatUI({
   const [dsaHistory, setDsaHistory] = useState<ChatHistoryItem[]>([]);
   const [arraysHistory, setArraysHistory] = useState<ChatHistoryItem[]>([]);
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
-  // 同步外部messages
   useEffect(() => {
     setMessages(externalMessages);
   }, [externalMessages]);
 
-  // Auto-scroll to bottom when a new message arrives
+  // Auto-scroll to bottom only if already at bottom
   useEffect(() => {
-    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (!scrollContainer) return;
+
+    // Check if we're at the bottom (with 50px tolerance)
+    const isAtBottom = 
+      scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight < 50;
+
+    if (isAtBottom) {
+      setTimeout(() => {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }, 0);
+    }
   }, [messages]);
 
   const toggleMessageCollapse = (messageId: string) => {
@@ -545,7 +556,7 @@ export function ChatUI({
   }
 
   return (
-    <div className="flex min-h-[300px] max-h-[70vh] w-full flex-col rounded-xl border bg-card shadow-sm overflow-hidden">
+    <div className="flex flex-1 flex-col rounded-xl border bg-card shadow-sm overflow-hidden">
       <div className="border-b px-4 py-3 flex items-center justify-between flex-shrink-0">
         <div>
           <h2 className="font-semibold text-foreground">DSA Visualizer</h2>
@@ -566,7 +577,7 @@ export function ChatUI({
         </Button>
       </div>
 
-      <ScrollArea className="flex-1 min-h-0 overflow-hidden">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 overflow-hidden">
         <div className="flex flex-col gap-4 p-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
@@ -624,7 +635,6 @@ export function ChatUI({
               </div>
             </div>
           )}
-          <div ref={scrollRef} />
         </div>
       </ScrollArea>
 

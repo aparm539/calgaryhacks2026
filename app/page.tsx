@@ -54,8 +54,8 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-muted/30 p-4">
-      <div className="mx-auto flex w-full max-w-7xl gap-4">
-        <div className="min-w-0 flex-1 flex flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-7xl gap-4 h-[calc(100vh-2rem)]">
+        <div className="min-w-0 flex-1 flex flex-col gap-4 h-full overflow-y-auto">
           {(playgroundUpdate || learningMode) && (
             <DSAPlayground
               key={`playground-${playgroundVersion}`}
@@ -78,7 +78,7 @@ export default function Home() {
             </div>
           )}
         </div>
-        <div className="w-[380px] flex-shrink-0">
+        <div className="w-[380px] flex-shrink-0 h-full flex flex-col">
           {learningMode && currentStructure ? (
             <LearningMode
               onClose={() => setLearningMode(false)}
