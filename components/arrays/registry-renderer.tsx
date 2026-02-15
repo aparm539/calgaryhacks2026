@@ -83,6 +83,20 @@ function getCompareEvents(events?: StepEvent[]) {
   );
 }
 
+function hasCompareOrSwapEvents(events?: StepEvent[]) {
+  return (events ?? []).some(
+    (event) => event.type === "compare" || event.type === "swap"
+  );
+}
+
+function getRangeKey(range?: { l: number; r: number }) {
+  if (!range) {
+    return "";
+  }
+
+  return `${range.l}:${range.r}`;
+}
+
 export function RegistryRenderer({
   components,
   spec,
@@ -101,22 +115,52 @@ export function RegistryRenderer({
     dedupeComponentsByType(components)
   );
   const stepsToCurrent = spec.steps.slice(0, stepIndex + 1);
-  const partitionHistory = stepsToCurrent.reduce<PartitionHistoryEntry[]>(
-    (history, timelineStep, timelineIndex) => {
-      if (!timelineStep.state.partition) {
-        return history;
-      }
+  const partitionHistoryCandidates: Array<{
+    entry: PartitionHistoryEntry;
+    hasCheckpointSignal: boolean;
+  }> = [];
 
-      history.push({
+  let previousPartitionPivot: number | null = null;
+  let previousPartitionRangeKey: string | null = null;
+
+  stepsToCurrent.forEach((timelineStep, timelineIndex) => {
+    const partitionState = timelineStep.state.partition;
+    if (!partitionState) {
+      return;
+    }
+
+    const currentRangeKey = getRangeKey(timelineStep.state.range);
+    const rangeChanged =
+      previousPartitionRangeKey !== null &&
+      currentRangeKey !== previousPartitionRangeKey;
+    const pivotChanged =
+      previousPartitionPivot !== null &&
+      partitionState.pivotIndex !== previousPartitionPivot;
+    const eventDriven = hasCompareOrSwapEvents(timelineStep.events);
+
+    partitionHistoryCandidates.push({
+      entry: {
         stepIndex: timelineIndex,
         caption: timelineStep.caption,
-        partition: timelineStep.state.partition,
+        partition: partitionState,
+        array: timelineStep.state.array,
+        pointers: timelineStep.state.pointers,
+        range: timelineStep.state.range,
+        events: timelineStep.events,
         isCurrent: timelineIndex === stepIndex,
-      });
-      return history;
-    },
-    []
-  );
+      },
+      hasCheckpointSignal: eventDriven || rangeChanged || pivotChanged,
+    });
+
+    previousPartitionPivot = partitionState.pivotIndex;
+    previousPartitionRangeKey = currentRangeKey;
+  });
+
+  const partitionHistory = partitionHistoryCandidates
+    .filter((candidate) => candidate.hasCheckpointSignal || candidate.entry.isCurrent)
+    .map((candidate) => candidate.entry)
+    .slice(-6);
+
   const mergeHistory = stepsToCurrent.reduce<MergeHistoryEntry[]>(
     (history, timelineStep, timelineIndex) => {
       if (!timelineStep.state.merge) {
@@ -218,14 +262,24 @@ export function RegistryRenderer({
         }
 
         if (component.type === "StackView") {
-          return <StackView key={component.id} items={step.state.stack} />;
+          return (
+            <StackView
+              key={component.id}
+              items={step.state.stack}
+              recursion={step.state.recursion}
+            />
+          );
         }
 
         if (component.type === "PartitionView") {
           return (
             <PartitionView
               key={component.id}
+              array={step.state.array}
               partition={step.state.partition}
+              pointers={step.state.pointers}
+              range={step.state.range}
+              events={step.events}
               history={partitionHistory}
             />
           );

@@ -13,6 +13,16 @@ export const ARRAYS_ALGORITHMS = [
 
 export type ArraysAlgorithm = (typeof ARRAYS_ALGORITHMS)[number];
 
+export const ARRAYS_MODEL_PROVIDERS = ["watson", "openrouter"] as const;
+export type ArraysProvider = (typeof ARRAYS_MODEL_PROVIDERS)[number];
+
+export const OPENROUTER_ARRAYS_MODELS = [
+  { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash (preview)" },
+
+] as const;
+
+export const DEFAULT_OPENROUTER_ARRAYS_MODEL = "google/gemini-3-flash-preview";
+
 export type ArraysChatHistoryMessage = {
   role: "user" | "assistant";
   content: string;
@@ -21,6 +31,8 @@ export type ArraysChatHistoryMessage = {
 export type ArraysChatRequest = {
   message: string;
   history?: ArraysChatHistoryMessage[];
+  provider?: ArraysProvider;
+  modelId?: string;
 };
 
 export type NormalizedArraysInput = {
@@ -41,6 +53,27 @@ export type StepEvent =
       j: number;
       outcome?: "lt" | "eq" | "gt";
     };
+
+export const RECURSION_PHASES = [
+  "enter",
+  "base",
+  "divide",
+  "recurse-left",
+  "recurse-right",
+  "combine",
+  "return",
+] as const;
+
+export type RecursionPhase = (typeof RECURSION_PHASES)[number];
+
+export type RecursionState = {
+  callId: string;
+  parentCallId?: string;
+  fn: string;
+  depth: number;
+  phase: RecursionPhase;
+  args: string;
+};
 
 export type StepState = {
   array: number[];
@@ -64,6 +97,7 @@ export type StepState = {
       r: number;
     };
   };
+  recursion?: RecursionState;
 };
 
 export type StepSpec = {
@@ -116,6 +150,8 @@ export type ArraysVizSpec = {
 export type ArraysChatSuccessResponse = {
   spec: ArraysVizSpec;
   normalizedInput: NormalizedArraysInput;
+  provider?: ArraysProvider;
+  modelId?: string;
 };
 
 export type ArraysChatErrorResponse = {
