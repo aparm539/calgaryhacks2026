@@ -388,7 +388,7 @@ export function ChatUI({
   const [collapsedMessages, setCollapsedMessages] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 同步外部messages
+ 
   useEffect(() => {
     setMessages(externalMessages);
   }, [externalMessages]);
