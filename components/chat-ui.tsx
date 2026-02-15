@@ -554,6 +554,7 @@ export function ChatUI({
           </p>
         </div>
         <Button
+          className="bg-red-400 hover:bg-red-300"
           type="button"
           variant="outline"
           size="sm"

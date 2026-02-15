@@ -7,6 +7,7 @@
 
 @theme inline {
   --color-background: var(--background);
+  --color-buttonColor: var(--buttonColor);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -50,9 +51,10 @@
 
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
+  --background: #c8d5b9;
+  --buttonColor: #8fc0a9;
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: #f8f7ff;
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
