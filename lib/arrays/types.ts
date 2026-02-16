@@ -4,15 +4,6 @@ export const MAX_ARRAY_LENGTH = 32;
 export const MAX_TIMELINE_STEPS = 300;
 export const MAX_CODE_LINES = 40;
 
-export const ARRAYS_ALGORITHMS = [
-  "linear-search",
-  "binary-search",
-  "quicksort",
-  "mergesort",
-] as const;
-
-export type ArraysAlgorithm = (typeof ARRAYS_ALGORITHMS)[number];
-
 export const ARRAYS_MODEL_PROVIDERS = ["watson", "openrouter"] as const;
 export type ArraysProvider = (typeof ARRAYS_MODEL_PROVIDERS)[number];
 
@@ -36,9 +27,7 @@ export type ArraysChatRequest = {
 };
 
 export type NormalizedArraysInput = {
-  algorithm: ArraysAlgorithm;
   array: number[];
-  target?: number;
 };
 
 export type StepEvent =
@@ -136,7 +125,6 @@ export type RegistryComponentRef =
 
 export type ArraysVizSpec = {
   version: "1.0";
-  algorithm: ArraysAlgorithm;
   title: string;
   code: {
     lines: string[];

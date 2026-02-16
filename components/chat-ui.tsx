@@ -524,7 +524,7 @@ export function ChatUI({
       ) {
         const arraysPayload = arraysResult.value;
         onArraysResult?.(arraysPayload);
-        const arraysStatusText = `Arrays visualization updated for ${arraysPayload.normalizedInput.algorithm}.`;
+        const arraysStatusText = "Arrays visualization updated.";
         setArraysHistory([
           ...nextArraysHistory,
           { role: "assistant", content: arraysStatusText },

@@ -1,50 +1,26 @@
 import { z } from "zod";
 import {
-  ARRAYS_ALGORITHMS,
   MAX_ARRAY_LENGTH,
   MAX_CODE_LINES,
   MAX_TIMELINE_STEPS,
   RECURSION_PHASES,
   REGISTRY_COMPONENT_TYPES,
-  type ArraysAlgorithm,
   type ArraysVizSpec,
   type RecursionPhase,
 } from "@/lib/arrays/types";
 
-const RECURSIVE_ALGORITHMS = new Set<ArraysAlgorithm>(["quicksort", "mergesort"]);
-
-type RecursiveAlgorithm = "quicksort" | "mergesort";
-
 type RecursionFrame = {
   stepIndex: number;
   callId: string;
-  fn: string;
   depth: number;
   phase: RecursionPhase;
 };
-
-function isRecursiveAlgorithm(
-  algorithm: ArraysAlgorithm
-): algorithm is RecursiveAlgorithm {
-  return RECURSIVE_ALGORITHMS.has(algorithm);
-}
-
-function hasComponentType(
-  components: ArraysVizSpec["scene"]["components"],
-  type: (typeof REGISTRY_COMPONENT_TYPES)[number]
-) {
-  return components.some((component) => component.type === type);
-}
 
 function findPhaseIndex(frames: RecursionFrame[], phase: RecursionPhase) {
   return frames.findIndex((frame) => frame.phase === phase);
 }
 
-function validateCallLifecycle(
-  algorithm: RecursiveAlgorithm,
-  callId: string,
-  frames: RecursionFrame[]
-) {
+function validateCallLifecycle(callId: string, frames: RecursionFrame[]) {
   const issues: string[] = [];
   if (!frames.length) {
     return issues;
@@ -84,10 +60,7 @@ function validateCallLifecycle(
     return issues;
   }
 
-  const requiredPhases: RecursionPhase[] =
-    algorithm === "mergesort"
-      ? ["enter", "divide", "recurse-left", "recurse-right", "combine", "return"]
-      : ["enter", "divide", "recurse-left", "recurse-right", "return"];
+  const requiredPhases: RecursionPhase[] = ["enter", "return"];
 
   let lastIndex = -1;
   requiredPhases.forEach((phase) => {
@@ -99,7 +72,7 @@ function validateCallLifecycle(
 
     if (phaseIndex < lastIndex) {
       issues.push(
-        `Call ${callId} phase "${phase}" appears out of order for ${algorithm}.`
+        `Call ${callId} phase "${phase}" appears out of order.`
       );
       return;
     }
@@ -376,7 +349,6 @@ const stepSchema = z
 export const arraysVizSpecSchema = z
   .object({
     version: z.literal("1.0"),
-    algorithm: z.enum(ARRAYS_ALGORITHMS),
     title: z.string().min(1).max(140),
     code: z
       .object({
@@ -404,29 +376,20 @@ export const arraysVizSpecSchema = z
       }
     });
 
-    if (!isRecursiveAlgorithm(spec.algorithm)) {
-      return;
-    }
-    const recursiveAlgorithm = spec.algorithm;
+    const recursionStepIndices = spec.steps
+      .map((step, index) => (step.state.recursion ? index : -1))
+      .filter((index) => index >= 0);
 
-    if (!hasComponentType(spec.scene.components, "StackView")) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["scene", "components"],
-        message:
-          "Recursive algorithms must include StackView in scene.components.",
-      });
+    if (recursionStepIndices.length === 0) {
+      return;
     }
 
     const recursionByCallId = new Map<string, RecursionFrame[]>();
 
     spec.steps.forEach((step, index) => {
-      if (step.caption.trim().toLowerCase() === "recursion") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["steps", index, "caption"],
-          message: 'Generic recursion caption "Recursion" is not allowed.',
-        });
+      const recursion = step.state.recursion;
+      if (!recursion) {
+        return;
       }
 
       const stack = step.state.stack;
@@ -434,20 +397,8 @@ export const arraysVizSpecSchema = z
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["steps", index, "state", "stack"],
-          message:
-            "Recursive algorithms require a non-empty state.stack on every step.",
+          message: "Recursion steps require a non-empty state.stack.",
         });
-      }
-
-      const recursion = step.state.recursion;
-      if (!recursion) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["steps", index, "state", "recursion"],
-          message:
-            "Recursive algorithms require state.recursion on every step.",
-        });
-        return;
       }
 
       if (recursion.depth !== (stack?.length ?? 0) - 1) {
@@ -459,58 +410,34 @@ export const arraysVizSpecSchema = z
         });
       }
 
-      if (
-        recursiveAlgorithm === "quicksort" &&
-        recursion.phase === "divide" &&
-        !step.state.partition
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["steps", index, "state", "partition"],
-          message:
-            'Quicksort divide phases must include state.partition for the active call.',
-        });
-      }
-
-      if (
-        recursiveAlgorithm === "mergesort" &&
-        recursion.phase === "combine" &&
-        !step.state.merge
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["steps", index, "state", "merge"],
-          message:
-            'Mergesort combine phases must include state.merge for the active call.',
-        });
-      }
-
       const frames = recursionByCallId.get(recursion.callId) ?? [];
       frames.push({
         stepIndex: index,
         callId: recursion.callId,
-        fn: recursion.fn,
         depth: recursion.depth,
         phase: recursion.phase,
       });
       recursionByCallId.set(recursion.callId, frames);
     });
 
-    const firstRecursion = spec.steps[0]?.state.recursion;
+    const firstRecursionIndex = recursionStepIndices[0];
+    const firstRecursion = spec.steps[firstRecursionIndex]?.state.recursion;
     if (firstRecursion) {
       if (firstRecursion.depth !== 0 || firstRecursion.phase !== "enter") {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["steps", 0, "state", "recursion"],
+          path: ["steps", firstRecursionIndex, "state", "recursion"],
           message:
             'First recursive step must start at depth 0 with phase "enter".',
         });
       }
     }
 
-    for (let index = 1; index < spec.steps.length; index += 1) {
-      const previous = spec.steps[index - 1].state.recursion;
-      const current = spec.steps[index].state.recursion;
+    for (let i = 1; i < recursionStepIndices.length; i += 1) {
+      const previousIndex = recursionStepIndices[i - 1];
+      const currentIndex = recursionStepIndices[i];
+      const previous = spec.steps[previousIndex].state.recursion;
+      const current = spec.steps[currentIndex].state.recursion;
       if (!previous || !current) {
         continue;
       }
@@ -519,7 +446,7 @@ export const arraysVizSpecSchema = z
       if (depthDelta < -1 || depthDelta > 1) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["steps", index, "state", "recursion", "depth"],
+          path: ["steps", currentIndex, "state", "recursion", "depth"],
           message:
             "Recursion depth jump between adjacent steps must be -1, 0, or +1.",
         });
@@ -533,7 +460,7 @@ export const arraysVizSpecSchema = z
         ) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            path: ["steps", index - 1, "state", "recursion", "phase"],
+            path: ["steps", previousIndex, "state", "recursion", "phase"],
             message:
               'Depth increase requires previous phase to be "recurse-left" or "recurse-right".',
           });
@@ -542,7 +469,7 @@ export const arraysVizSpecSchema = z
         if (current.phase !== "enter") {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
-            path: ["steps", index, "state", "recursion", "phase"],
+            path: ["steps", currentIndex, "state", "recursion", "phase"],
             message: 'Depth increase requires current phase to be "enter".',
           });
         }
@@ -551,18 +478,19 @@ export const arraysVizSpecSchema = z
       if (depthDelta === -1 && previous.phase !== "return") {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["steps", index - 1, "state", "recursion", "phase"],
+          path: ["steps", previousIndex, "state", "recursion", "phase"],
           message: 'Depth decrease requires previous phase to be "return".',
         });
       }
     }
 
-    const lastRecursion = spec.steps.at(-1)?.state.recursion;
+    const lastRecursionIndex = recursionStepIndices[recursionStepIndices.length - 1];
+    const lastRecursion = spec.steps[lastRecursionIndex]?.state.recursion;
     if (lastRecursion) {
       if (lastRecursion.depth !== 0 || lastRecursion.phase !== "return") {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["steps", spec.steps.length - 1, "state", "recursion"],
+          path: ["steps", lastRecursionIndex, "state", "recursion"],
           message:
             'Last recursive step must end at depth 0 with phase "return".',
         });
@@ -570,7 +498,7 @@ export const arraysVizSpecSchema = z
     }
 
     recursionByCallId.forEach((frames, callId) => {
-      const callIssues = validateCallLifecycle(recursiveAlgorithm, callId, frames);
+      const callIssues = validateCallLifecycle(callId, frames);
       callIssues.forEach((issue) => {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,

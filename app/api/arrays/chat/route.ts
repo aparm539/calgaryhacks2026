@@ -6,12 +6,9 @@ import {
 } from "@/lib/arrays/schema";
 import {
   DEFAULT_OPENROUTER_ARRAYS_MODEL,
-  MAX_TIMELINE_STEPS,
-  type ArraysAlgorithm,
   type ArraysChatHistoryMessage,
   type ArraysChatRequest,
   type ArraysProvider,
-  type ArraysVizSpec,
   type NormalizedArraysInput,
 } from "@/lib/arrays/types";
 import {
@@ -29,7 +26,6 @@ import {
 } from "@/lib/watsonx";
 
 const SPEC_MAX_REPAIR_ATTEMPTS = 3;
-const RECURSIVE_ALGORITHMS = new Set<ArraysAlgorithm>(["quicksort", "mergesort"]);
 const DEFAULT_WATSON_MODEL = "meta-llama/llama-3-3-70b-instruct";
 
 type ModelChatMessage = {
@@ -51,49 +47,6 @@ type BuildSpecParams = {
   history: ArraysChatHistoryMessage[];
   normalizedInput: NormalizedArraysInput;
 };
-
-type QuicksortPhase =
-  | "enter"
-  | "base"
-  | "divide"
-  | "recurse-left"
-  | "recurse-right"
-  | "return";
-
-type QuicksortTraceContext = {
-  array: number[];
-  steps: ArraysVizSpec["steps"];
-  nextStepId: number;
-  nextCallId: number;
-};
-
-function isRecursiveAlgorithm(algorithm: ArraysAlgorithm) {
-  return RECURSIVE_ALGORITHMS.has(algorithm);
-}
-
-function stripMarkdownFences(raw: string) {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith("```")) {
-    return trimmed;
-  }
-
-  const withoutStart = trimmed.replace(/^```(?:json)?\s*/i, "");
-  return withoutStart.replace(/\s*```$/, "").trim();
-}
-
-function getCandidateStepCount(candidateSpec: string) {
-  try {
-    const parsed = JSON.parse(stripMarkdownFences(candidateSpec)) as {
-      steps?: unknown;
-    };
-    if (Array.isArray(parsed.steps)) {
-      return parsed.steps.length;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 function sanitizeHistory(history?: ArraysChatHistoryMessage[]) {
   if (!history?.length) {
@@ -131,18 +84,6 @@ function sanitizeModelId(modelId?: string) {
   return trimmed;
 }
 
-function validateAlgorithmMatch(
-  spec: ArraysVizSpec,
-  normalizedInput: NormalizedArraysInput
-) {
-  if (spec.algorithm !== normalizedInput.algorithm) {
-    throw new ArraysSpecValidationError(
-      "Visualization spec failed validation.",
-      `Expected algorithm ${normalizedInput.algorithm} but received ${spec.algorithm}.`
-    );
-  }
-}
-
 function buildRepairHint(validationDetails?: string) {
   if (!validationDetails) {
     return "";
@@ -160,77 +101,23 @@ function buildRepairHint(validationDetails?: string) {
   }
 
   if (validationDetails.includes("events") && validationDetails.includes(".j")) {
-    hints.push(
-      "Every event must include integer i and j. For search target comparisons, set j equal to i."
-    );
-  }
-
-  if (validationDetails.includes("state.merge")) {
-    hints.push(
-      "For mergesort merge phases, include state.merge with left, right, merged, and optional writeRange."
-    );
-  }
-
-  if (
-    validationDetails.includes("scene.components") &&
-    validationDetails.includes("MergeView")
-  ) {
-    hints.push(
-      "When algorithm is mergesort, include one MergeView component in scene.components."
-    );
-  }
-
-  if (
-    validationDetails.includes("scene.components") &&
-    validationDetails.includes("StackView")
-  ) {
-    hints.push(
-      "For quicksort and mergesort, include one StackView in scene.components."
-    );
+    hints.push("Every event must include integer i and j.");
   }
 
   if (validationDetails.includes("state.recursion")) {
     hints.push(
-      "For quicksort and mergesort, include state.recursion on every step with callId, fn, depth, phase, and args."
+      "If recursion is used, include state.recursion with callId, fn, depth, phase, and args."
     );
   }
 
   if (validationDetails.includes("state.stack")) {
-    hints.push(
-      "For quicksort and mergesort, include a non-empty state.stack on every step."
-    );
+    hints.push("If recursion is used, include a non-empty state.stack.");
   }
 
   if (validationDetails.includes("depth jump")) {
     hints.push(
-      "Recursive depth can only change by -1, 0, or +1 between adjacent steps."
+      "Recursion depth can only change by -1, 0, or +1 between adjacent recursion steps."
     );
-  }
-
-  if (validationDetails.includes('caption') && validationDetails.includes("Recursion")) {
-    hints.push('Do not use generic caption "Recursion"; use specific call-phase captions.');
-  }
-
-  if (
-    validationDetails.includes('phase "divide"') &&
-    validationDetails.includes("partition")
-  ) {
-    hints.push("Quicksort divide phases must include state.partition.");
-  }
-
-  if (
-    validationDetails.includes(
-      "Quicksort divide phases must include state.partition"
-    )
-  ) {
-    hints.push("For quicksort, every divide phase must include state.partition.");
-  }
-
-  if (
-    validationDetails.includes('phase "combine"') &&
-    validationDetails.includes("merge")
-  ) {
-    hints.push("Mergesort combine phases must include state.merge.");
   }
 
   if (
@@ -239,366 +126,11 @@ function buildRepairHint(validationDetails?: string) {
     validationDetails.includes('must begin with phase "enter"')
   ) {
     hints.push(
-      "Give every recursive invocation a unique callId and keep a full phase lifecycle per callId in order (quicksort: enter -> base -> return OR enter -> divide -> recurse-left -> recurse-right -> return)."
-    );
-  }
-
-  if (
-    validationDetails.includes(
-      'Last recursive step must end at depth 0 with phase "return".'
-    )
-  ) {
-    hints.push(
-      'Ensure the final step is the root call at depth 0 with recursion.phase set to "return".'
-    );
-  }
-
-  if (
-    validationDetails.includes(
-      'First recursive step must start at depth 0 with phase "enter".'
-    )
-  ) {
-    hints.push(
-      'Ensure the first step is the root call at depth 0 with recursion.phase set to "enter".'
+      "For recursive call traces, keep a full lifecycle per callId in order and include a final return phase."
     );
   }
 
   return hints.join(" ");
-}
-
-function getQuicksortCodeLineForPhase(phase: QuicksortPhase) {
-  switch (phase) {
-    case "enter":
-      return 1;
-    case "base":
-      return 2;
-    case "divide":
-      return 3;
-    case "recurse-left":
-      return 4;
-    case "recurse-right":
-      return 5;
-    case "return":
-      return 6;
-    default:
-      return 1;
-  }
-}
-
-function createValidRange(arrayLength: number, lo: number, hi: number) {
-  if (lo < 0 || hi < 0 || lo >= arrayLength || hi >= arrayLength || lo > hi) {
-    return undefined;
-  }
-
-  return { l: lo, r: hi };
-}
-
-function createValidPointers(arrayLength: number, lo: number, hi: number) {
-  const pointers: Record<string, number> = {};
-
-  if (lo >= 0 && lo < arrayLength) {
-    pointers.lo = lo;
-  }
-
-  if (hi >= 0 && hi < arrayLength) {
-    pointers.hi = hi;
-  }
-
-  return Object.keys(pointers).length > 0 ? pointers : undefined;
-}
-
-function partitionLomuto(values: number[], lo: number, hi: number) {
-  const pivotValue = values[hi];
-  let storeIndex = lo;
-
-  for (let scanIndex = lo; scanIndex < hi; scanIndex += 1) {
-    if (values[scanIndex] <= pivotValue) {
-      [values[storeIndex], values[scanIndex]] = [
-        values[scanIndex],
-        values[storeIndex],
-      ];
-      storeIndex += 1;
-    }
-  }
-
-  [values[storeIndex], values[hi]] = [values[hi], values[storeIndex]];
-
-  return {
-    pivotIndex: storeIndex,
-    pivotValue,
-  };
-}
-
-type PushQuicksortStepParams = {
-  context: QuicksortTraceContext;
-  callId: string;
-  parentCallId?: string;
-  depth: number;
-  phase: QuicksortPhase;
-  lo: number;
-  hi: number;
-  stack: string[];
-  caption: string;
-  partition?: {
-    pivotIndex: number;
-    less: number[];
-    greater: number[];
-  };
-  events?: ArraysVizSpec["steps"][number]["events"];
-};
-
-function pushQuicksortStep({
-  context,
-  callId,
-  parentCallId,
-  depth,
-  phase,
-  lo,
-  hi,
-  stack,
-  caption,
-  partition,
-  events,
-}: PushQuicksortStepParams) {
-  const range = createValidRange(context.array.length, lo, hi);
-  const basePointers = createValidPointers(context.array.length, lo, hi);
-  const pointers =
-    phase === "divide" && partition
-      ? {
-          ...(basePointers ?? {}),
-          pivot: partition.pivotIndex,
-        }
-      : basePointers;
-
-  context.steps.push({
-    id: `s${context.nextStepId}`,
-    caption,
-    activeCodeLine: getQuicksortCodeLineForPhase(phase),
-    state: {
-      array: [...context.array],
-      ...(pointers ? { pointers } : {}),
-      ...(range ? { range } : {}),
-      stack: [...stack],
-      recursion: {
-        callId,
-        ...(parentCallId ? { parentCallId } : {}),
-        fn: "quicksort",
-        depth,
-        phase,
-        args: `lo=${lo} hi=${hi}`,
-      },
-      ...(partition ? { partition } : {}),
-    },
-    ...(events && events.length > 0 ? { events } : {}),
-  });
-  context.nextStepId += 1;
-}
-
-type TraceQuicksortCallParams = {
-  context: QuicksortTraceContext;
-  lo: number;
-  hi: number;
-  depth: number;
-  parentCallId?: string;
-  stackPrefix: string[];
-};
-
-function traceQuicksortCall({
-  context,
-  lo,
-  hi,
-  depth,
-  parentCallId,
-  stackPrefix,
-}: TraceQuicksortCallParams) {
-  const callId = `q${context.nextCallId}`;
-  context.nextCallId += 1;
-
-  const stack = [...stackPrefix, `${callId}(lo=${lo}, hi=${hi})`];
-  const argsText = `lo=${lo}, hi=${hi}`;
-
-  pushQuicksortStep({
-    context,
-    callId,
-    parentCallId,
-    depth,
-    phase: "enter",
-    lo,
-    hi,
-    stack,
-    caption: `Enter quicksort(${argsText})`,
-  });
-
-  if (lo >= hi) {
-    pushQuicksortStep({
-      context,
-      callId,
-      parentCallId,
-      depth,
-      phase: "base",
-      lo,
-      hi,
-      stack,
-      caption: `Base case reached for quicksort(${argsText})`,
-    });
-
-    pushQuicksortStep({
-      context,
-      callId,
-      parentCallId,
-      depth,
-      phase: "return",
-      lo,
-      hi,
-      stack,
-      caption: `Return from quicksort(${argsText})`,
-    });
-    return;
-  }
-
-  const { pivotIndex, pivotValue } = partitionLomuto(context.array, lo, hi);
-  const partition = {
-    pivotIndex,
-    less: context.array.slice(lo, pivotIndex),
-    greater: context.array.slice(pivotIndex + 1, hi + 1),
-  };
-  const divideEvents: ArraysVizSpec["steps"][number]["events"] = [
-    { type: "compare", i: hi, j: hi, outcome: "eq" },
-    { type: "swap", i: pivotIndex, j: hi },
-  ];
-
-  pushQuicksortStep({
-    context,
-    callId,
-    parentCallId,
-    depth,
-    phase: "divide",
-    lo,
-    hi,
-    stack,
-    caption: `Partition [${lo}, ${hi}] with pivot ${pivotValue} at index ${pivotIndex}`,
-    partition,
-    events: divideEvents,
-  });
-
-  const leftLo = lo;
-  const leftHi = pivotIndex - 1;
-  const rightLo = pivotIndex + 1;
-  const rightHi = hi;
-
-  pushQuicksortStep({
-    context,
-    callId,
-    parentCallId,
-    depth,
-    phase: "recurse-left",
-    lo,
-    hi,
-    stack,
-    caption: `Recurse left: quicksort(lo=${leftLo}, hi=${leftHi})`,
-  });
-
-  traceQuicksortCall({
-    context,
-    lo: leftLo,
-    hi: leftHi,
-    depth: depth + 1,
-    parentCallId: callId,
-    stackPrefix: stack,
-  });
-
-  pushQuicksortStep({
-    context,
-    callId,
-    parentCallId,
-    depth,
-    phase: "recurse-right",
-    lo,
-    hi,
-    stack,
-    caption: `Recurse right: quicksort(lo=${rightLo}, hi=${rightHi})`,
-  });
-
-  traceQuicksortCall({
-    context,
-    lo: rightLo,
-    hi: rightHi,
-    depth: depth + 1,
-    parentCallId: callId,
-    stackPrefix: stack,
-  });
-
-  pushQuicksortStep({
-    context,
-    callId,
-    parentCallId,
-    depth,
-    phase: "return",
-    lo,
-    hi,
-    stack,
-    caption: `Return from quicksort(${argsText})`,
-  });
-}
-
-function buildDeterministicQuicksortSpec(
-  normalizedInput: NormalizedArraysInput
-): ArraysVizSpec {
-  const traceContext: QuicksortTraceContext = {
-    array: [...normalizedInput.array],
-    steps: [],
-    nextStepId: 0,
-    nextCallId: 0,
-  };
-
-  traceQuicksortCall({
-    context: traceContext,
-    lo: 0,
-    hi: traceContext.array.length - 1,
-    depth: 0,
-    stackPrefix: [],
-  });
-
-  return {
-    version: "1.0",
-    algorithm: "quicksort",
-    title: `Quicksort walkthrough for [${normalizedInput.array.join(", ")}]`,
-    code: {
-      lines: [
-        "function quicksort(a, lo, hi):",
-        "  if lo >= hi: return",
-        "  p = partition(a, lo, hi)",
-        "  quicksort(a, lo, p - 1)",
-        "  quicksort(a, p + 1, hi)",
-        "  return",
-      ],
-    },
-    scene: {
-      components: [
-        { id: "bars", type: "BarArrayView" },
-        { id: "pointer", type: "Pointer" },
-        { id: "range", type: "RangeHighlight" },
-        { id: "swap", type: "SwapAnimation" },
-        { id: "compare", type: "CompareAnimation" },
-        { id: "partition", type: "PartitionView" },
-        { id: "stack", type: "StackView" },
-        { id: "caption", type: "CaptionCallout" },
-        { id: "code", type: "CodeBlock" },
-        { id: "timeline", type: "TimelineStepper" },
-      ],
-    },
-    steps: traceContext.steps,
-  };
-}
-
-function buildDeterministicFallbackSpec(
-  normalizedInput: NormalizedArraysInput
-) {
-  if (normalizedInput.algorithm === "quicksort") {
-    return buildDeterministicQuicksortSpec(normalizedInput);
-  }
-
-  return null;
 }
 
 async function generateValidatedSpec({
@@ -626,9 +158,7 @@ async function generateValidatedSpec({
 
   for (let attempt = 0; attempt <= SPEC_MAX_REPAIR_ATTEMPTS; attempt += 1) {
     try {
-      const spec = parseAndValidateArraysSpec(candidateSpec);
-      validateAlgorithmMatch(spec, normalizedInput);
-      return spec;
+      return parseAndValidateArraysSpec(candidateSpec);
     } catch (error) {
       if (!(error instanceof ArraysSpecValidationError)) {
         throw error;
@@ -656,29 +186,6 @@ async function generateValidatedSpec({
         temperature: 0,
         maxTokens: 3500,
       });
-    }
-  }
-
-  const fallbackSpec = buildDeterministicFallbackSpec(normalizedInput);
-  if (fallbackSpec) {
-    try {
-      const validatedFallback = parseAndValidateArraysSpec(
-        JSON.stringify(fallbackSpec)
-      );
-      validateAlgorithmMatch(validatedFallback, normalizedInput);
-      return validatedFallback;
-    } catch {
-      // Keep the original validation error if deterministic fallback is invalid.
-    }
-  }
-
-  if (isRecursiveAlgorithm(normalizedInput.algorithm)) {
-    const stepCount = getCandidateStepCount(candidateSpec);
-    if (stepCount !== null && stepCount >= MAX_TIMELINE_STEPS) {
-      throw new ArraysSpecValidationError(
-        "Visualization spec failed validation.",
-        `Recursive detail exceeded step budget of ${MAX_TIMELINE_STEPS} steps. Provide a smaller array so the full recursion lifecycle can be shown.`
-      );
     }
   }
 
